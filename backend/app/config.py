@@ -7,7 +7,12 @@ PROJECT_ROOT = BACKEND_ROOT.parent
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="PW_", env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_prefix="PW_",
+        env_file=str(PROJECT_ROOT / ".env"),
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
 
     app_name: str = "ProductWatch"
     database_url: str = f"sqlite:///{(BACKEND_ROOT / 'data' / 'productwatch.db').as_posix()}"
