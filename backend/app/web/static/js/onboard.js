@@ -1,5 +1,7 @@
 (() => {
   const form = document.getElementById("signup-form");
+  if (!form) return;
+
   const steps = [...document.querySelectorAll("#steps li")];
   const panels = [...document.querySelectorAll(".step-panel")];
   const video = document.getElementById("camera");
@@ -48,7 +50,6 @@
     canvas.width = w;
     canvas.height = h;
     const ctx = canvas.getContext("2d");
-    // Un-mirror for the model (video CSS is mirrored).
     ctx.translate(w, 0);
     ctx.scale(-1, 1);
     ctx.drawImage(video, 0, 0, w, h);
@@ -75,12 +76,13 @@
     }
     const user = await res.json();
     userId = user.id;
+    await fetch(`/auth/customer/session/${userId}`, { method: "POST" });
     showStep(2);
     try {
       await openCamera();
       overlay.textContent = "Camera ready — start face scan";
     } catch (err) {
-      showError(scanError, "Camera permission is required for face enrollment.");
+      showError(scanError, "Camera permission is required for Rewards face enrollment.");
     }
   });
 
@@ -106,13 +108,15 @@
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error(err.detail || "Enrollment failed");
+        throw new Error(typeof err.detail === "string" ? err.detail : "Enrollment failed");
       }
       const result = await res.json();
+      await fetch(`/auth/customer/session/${userId}`, { method: "POST" });
       stopCamera();
       doneCopy.textContent =
-        `Rewards member #${result.user_id} enrolled with ${result.samples_captured} face samples. ` +
-        "The marketing agent can email you when aisle interest is detected.";
+        `Welcome to WatcherMart Rewards (#${result.user_id}). ` +
+        `Face enrolled from ${result.samples_captured} frames. ` +
+        "You can view aisle interest on your account anytime.";
       showStep(3);
     } catch (err) {
       showError(scanError, err.message || String(err));

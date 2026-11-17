@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="section">
+  <div class="account-head">
+    <div>
+      <p class="eyebrow">My WatcherMart</p>
+      <h1 class="page-title">Hi, {{ user.name.split()[0] }}</h1>
+      <p class="section-sub">{{ user.email }}{% if user.face_enrolled %} · Face ID enrolled{% endif %}</p>
+    </div>
+    <form method="post" action="/auth/customer/logout">
+      <button class="btn btn-secondary" type="submit">Sign out</button>
+    </form>
+  </div>
+
+  <div class="card">
+    <h2>Products you’ve shown interest in</h2>
+    <p class="section-sub">Based on aisle browsing detected for your Rewards profile.</p>
+    {% if interests %}
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Product</th>
+            <th>Interest</th>
+            <th>First noticed</th>
+            <th>Last noticed</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in interests %}
+          <tr>
+            <td>{{ item.product_name }}</td>
+            <td>
+              <div class="meter"><span style="width: {{ [item.weight, 100]|min }}%"></span></div>
+              {{ '%.0f'|format(item.weight) }} / 100
+            </td>
+            <td>{{ item.first_seen_at.strftime('%b %d, %Y %I:%M %p') if item.first_seen_at else '—' }}</td>
+            <td>{{ item.last_seen_at.strftime('%b %d, %Y %I:%M %p') if item.last_seen_at else '—' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <p class="empty">No aisle interest yet. Visit the store demo aisle, then refresh this page.</p>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}

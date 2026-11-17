@@ -18,7 +18,7 @@ from backend.app.config import settings
 logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = (
-    "You are the ProductWatch marketing copy agent for a supermarket rewards program. "
+    "You are the WatcherMart marketing copy agent for a supermarket rewards program. "
     "Draft a short promotional email. Return JSON with keys: "
     "subject (string), paragraphs (array of 2-3 short strings), "
     "angle (one of: urgency, value, discovery, loyalty). "
@@ -151,7 +151,7 @@ def _draft_with_mock_llm(brief: DraftBrief) -> EmailDraft:
     elif angle == "loyalty":
         subject = f"Thanks for browsing, {first} — {brief.percent_off:.0f}% off {brief.product_name}"
         paragraphs = [
-            f"As a ProductWatch rewards member, you get first dibs when something you noticed goes on promo. "
+            f"As a WatcherMart rewards member, you get first dibs when something you noticed goes on promo. "
             f"{brief.product_name} is {brief.percent_off:.0f}% off for a limited window.",
             f"Enjoy the savings on {brief.brand}, and thanks for shopping with us.",
         ]

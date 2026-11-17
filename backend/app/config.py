@@ -70,8 +70,11 @@ class Settings(BaseSettings):
     smtp_username: str | None = None
     smtp_password: str | None = None
     smtp_use_tls: bool = True
-    marketing_from_name: str = "ProductWatch Rewards"
-    marketing_from_email: str = "rewards@productwatch.local"
+    marketing_from_name: str = "WatcherMart Rewards"
+    marketing_from_email: str = "rewards@watchermart.local"
+    session_secret: str = "watchermart-hackathon-secret-change-me"
+    manager_username: str = "manager"
+    manager_password: str = "manager"
 
 
 settings = Settings()

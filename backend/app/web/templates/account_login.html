@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="section narrow">
+  <p class="eyebrow">Rewards members</p>
+  <h1 class="page-title">Sign in</h1>
+  <p class="section-sub">Enter the email you used for Rewards Club.</p>
+  <form class="card" method="post" action="/auth/customer/login" id="customer-login">
+    <label>
+      Email
+      <input name="email" type="email" required placeholder="you@email.com" autocomplete="email" />
+    </label>
+    <button type="submit" class="btn btn-primary">Sign in</button>
+    <p class="error" id="login-error" hidden></p>
+    <p class="fineprint">New here? <a href="/rewards">Join Rewards Club</a></p>
+  </form>
+</section>
+{% endblock %}
+{% block scripts %}
+<script src="/static/js/account_login.js"></script>
+{% endblock %}

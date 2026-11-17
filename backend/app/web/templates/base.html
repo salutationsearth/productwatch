@@ -3,26 +3,52 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>{{ title }} · ProductWatch</title>
+  <title>{{ title }} · WatcherMart</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=Syne:wght@600;700;800&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Sora:wght@600;700;800&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/static/css/app.css" />
   {% block head %}{% endblock %}
 </head>
 <body>
-  <div class="atmosphere" aria-hidden="true"></div>
-  <header class="topbar">
-    <a class="brand" href="/">ProductWatch</a>
-    <nav>
-      <a href="/onboard">Rewards signup</a>
-      <a href="/dashboard">Marketing desk</a>
-      <a href="/docs">API</a>
-    </nav>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="logo" href="/">
+        <span class="logo-mark">W</span>
+        <span class="logo-text">WatcherMart</span>
+      </a>
+      <nav class="main-nav">
+        <a href="/">Home</a>
+        <a href="/rewards">Rewards Club</a>
+        {% if customer_id %}
+        <a href="/account">My Account</a>
+        {% else %}
+        <a href="/account/login">Sign in</a>
+        {% endif %}
+        <a href="/manager/login" class="nav-quiet">Staff</a>
+      </nav>
+    </div>
   </header>
-  <main>
+
+  {% block hero %}{% endblock %}
+
+  <main class="site-main">
     {% block content %}{% endblock %}
   </main>
+
+  <footer class="site-footer">
+    <div class="footer-inner">
+      <div>
+        <strong>WatcherMart</strong>
+        <p>Fresh aisles. Fair prices. Rewards that notice what you love.</p>
+      </div>
+      <div class="footer-links">
+        <a href="/rewards">Join Rewards</a>
+        <a href="/account">My Account</a>
+        <a href="/manager/login">Manager</a>
+      </div>
+    </div>
+  </footer>
   {% block scripts %}{% endblock %}
 </body>
 </html>

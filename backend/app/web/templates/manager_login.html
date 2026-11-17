@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="section narrow">
+  <p class="eyebrow">Store staff</p>
+  <h1 class="page-title">Manager login</h1>
+  <p class="section-sub">Marketing & aisle analytics for WatcherMart.</p>
+  <form class="card" method="post" action="/auth/manager/login">
+    {% if error %}
+    <p class="error">Invalid username or password.</p>
+    {% endif %}
+    <label>
+      Username
+      <input name="username" type="text" required autocomplete="username" />
+    </label>
+    <label>
+      Password
+      <input name="password" type="password" required autocomplete="current-password" />
+    </label>
+    <button type="submit" class="btn btn-primary">Sign in</button>
+  </form>
+</section>
+{% endblock %}

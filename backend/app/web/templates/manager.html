@@ -1,0 +1,157 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="section">
+  <div class="account-head">
+    <div>
+      <p class="eyebrow">Marketing admin</p>
+      <h1 class="page-title">Aisle & email performance</h1>
+      <p class="section-sub">Product-level interest only — individual shopper preferences stay out of the public storefront.</p>
+    </div>
+    <div class="row">
+      <button class="btn btn-secondary" type="button" id="refresh-dash">Refresh</button>
+      <button class="btn btn-primary" type="button" id="run-agent">Run agent now</button>
+      <form method="post" action="/auth/manager/logout">
+        <button class="btn btn-secondary" type="submit">Sign out</button>
+      </form>
+    </div>
+  </div>
+
+  <p class="agent-line" id="agent-line">Agent: loading…</p>
+
+  <div class="kpi-strip" id="kpi-strip">
+    <div class="kpi"><div class="label">Rewards members</div><div class="value">{{ summary.rewards_members }}</div></div>
+    <div class="kpi"><div class="label">Face enrolled</div><div class="value">{{ summary.face_enrolled_members }}</div></div>
+    <div class="kpi"><div class="label">Interest events</div><div class="value">{{ summary.interest_events_total }}</div></div>
+    <div class="kpi"><div class="label">Email conv %</div><div class="value">{{ summary.overall_conversion_rate }}%</div></div>
+  </div>
+
+  <div class="dash-grid">
+    <section class="card">
+      <h2>Product interest</h2>
+      <p class="section-sub">Anonymous aggregates by SKU.</p>
+      <div class="table-wrap">
+        <table id="interest-table">
+          <thead>
+            <tr>
+              <th>Product</th>
+              <th>Shoppers</th>
+              <th>Total weight</th>
+              <th>Avg</th>
+              <th>Events</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for p in summary.product_interest %}
+            <tr>
+              <td>{{ p.product_name }}<div class="muted">{{ p.brand }} · {{ p.category }}</div></td>
+              <td>{{ p.interested_shopper_count }}</td>
+              <td>{{ '%.1f'|format(p.total_interest_weight) }}</td>
+              <td>{{ '%.1f'|format(p.avg_interest_weight) }}</td>
+              <td>{{ p.interest_event_count }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <div class="bars" id="interest-bars"></div>
+    </section>
+
+    <section class="card">
+      <h2>Email funnel by product</h2>
+      <div class="table-wrap">
+        <table id="funnel-table">
+          <thead>
+            <tr>
+              <th>Product</th>
+              <th>Sent</th>
+              <th>Open %</th>
+              <th>Click %</th>
+              <th>Conv %</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for p in summary.email_funnel %}
+            <tr>
+              <td>{{ p.product_name }}</td>
+              <td>{{ p.emails_sent }}</td>
+              <td>{{ p.open_rate }}%</td>
+              <td>{{ p.click_rate }}%</td>
+              <td>{{ p.conversion_rate }}%</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <section class="card">
+    <h2>Emails sent</h2>
+    <p class="section-sub">Recent marketing messages from the agent.</p>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Sent</th>
+            <th>To</th>
+            <th>Subject</th>
+            <th>Product</th>
+            <th>Off</th>
+            <th>Open</th>
+            <th>Click</th>
+            <th>Conv</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for e in emails %}
+          <tr>
+            <td>{{ e.sent_at.strftime('%b %d %I:%M %p') if e.sent_at else '—' }}</td>
+            <td>{{ e.to_email }}</td>
+            <td><a href="/offer/{{ e.token }}">{{ e.subject }}</a></td>
+            <td>{{ e.product_name }}</td>
+            <td>{{ '%.0f'|format(e.percent_off) }}%</td>
+            <td>{{ 'Yes' if e.opened else '—' }}</td>
+            <td>{{ 'Yes' if e.clicked else '—' }}</td>
+            <td>{{ 'Yes' if e.converted else '—' }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="8" class="empty">No emails sent yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Agent activity</h2>
+    <ul class="agent-log" id="agent-log">
+      {% for r in summary.recent_agent_runs %}
+      <li><strong>{{ r.created_at }}</strong> — reviewed {{ r.candidates_reviewed }}, sent {{ r.emails_sent }}. {{ r.summary }}</li>
+      {% else %}
+      <li>No agent runs yet.</li>
+      {% endfor %}
+    </ul>
+  </section>
+</section>
+{% endblock %}
+{% block scripts %}
+<script src="/static/js/dashboard.js"></script>
+<script>
+  // Seed interest bars from server-rendered table data
+  (function () {
+    const rows = [...document.querySelectorAll("#interest-table tbody tr")].map((tr) => {
+      const cells = tr.querySelectorAll("td");
+      if (!cells.length) return null;
+      return {
+        name: cells[0].childNodes[0].textContent.trim(),
+        weight: parseFloat(cells[2].textContent) || 0,
+      };
+    }).filter(Boolean);
+    const maxW = Math.max(...rows.map((r) => r.weight), 1);
+    document.getElementById("interest-bars").innerHTML = rows.slice(0, 6).map((r) => {
+      const pct = Math.round((r.weight / maxW) * 100);
+      return `<div class="bar-row"><span>${r.name}</span><div class="bar-track"><div class="bar-fill" style="width:${pct}%"></div></div><span>${r.weight.toFixed(0)}</span></div>`;
+    }).join("");
+  })();
+</script>
+{% endblock %}

@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="section narrow">
+  <p class="eyebrow">WatcherMart Rewards Club</p>
+  <h1 class="page-title">Join in two steps</h1>
+  <p class="section-sub">Create your account, then scan your face once so we can recognize you in the aisle and send relevant offers.</p>
+
+  <ol class="steps" id="steps">
+    <li class="active" data-step="1">Account</li>
+    <li data-step="2">Face scan</li>
+    <li data-step="3">Done</li>
+  </ol>
+
+  <form id="signup-form" class="card step-panel" data-panel="1">
+    <label>
+      Full name
+      <input name="name" type="text" required maxlength="120" placeholder="Alex Rivera" autocomplete="name" />
+    </label>
+    <label>
+      Email
+      <input name="email" type="email" required placeholder="alex@email.com" autocomplete="email" />
+    </label>
+    <p class="fineprint">By continuing you consent to storing a face embedding (not a photo) for Rewards identification in WatcherMart stores.</p>
+    <button type="submit" class="btn btn-primary">Continue to face scan</button>
+    <p class="error" id="signup-error" hidden></p>
+  </form>
+
+  <div class="card step-panel" data-panel="2" hidden>
+    <h2>Face scan</h2>
+    <p class="section-sub">Keep your face centered. We’ll capture a few frames and enroll you.</p>
+    <div class="camera-shell">
+      <video id="camera" autoplay playsinline muted></video>
+      <canvas id="capture" hidden></canvas>
+      <div class="scan-overlay" id="scan-overlay">Ready</div>
+    </div>
+    <div class="row">
+      <button type="button" class="btn btn-primary" id="start-scan">Start face scan</button>
+      <button type="button" class="btn btn-secondary" id="cancel-scan">Back</button>
+    </div>
+    <p class="error" id="scan-error" hidden></p>
+  </div>
+
+  <div class="card step-panel" data-panel="3" hidden>
+    <h2>You’re a Rewards member</h2>
+    <p class="section-sub" id="done-copy">Welcome to WatcherMart Rewards.</p>
+    <div class="row">
+      <a class="btn btn-primary" href="/account">View my account</a>
+      <a class="btn btn-secondary" href="/">Back to store</a>
+    </div>
+  </div>
+</section>
+{% endblock %}
+{% block scripts %}
+<script src="/static/js/onboard.js"></script>
+{% endblock %}

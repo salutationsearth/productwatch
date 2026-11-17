@@ -34,10 +34,12 @@ python backend/scripts/seed_products.py
 uvicorn backend.app.main:app --reload --app-dir .
 ```
 
-Open:
+Open (WatcherMart storefront):
 
-- Rewards signup: http://127.0.0.1:8000/onboard
-- Marketing desk: http://127.0.0.1:8000/dashboard
+- Store home: http://127.0.0.1:8000/
+- Rewards signup: http://127.0.0.1:8000/rewards
+- Customer account: http://127.0.0.1:8000/account
+- Manager login: http://127.0.0.1:8000/manager/login (`manager` / `manager`)
 - API docs: http://127.0.0.1:8000/docs
 
 ## Demo flow

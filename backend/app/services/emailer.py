@@ -40,7 +40,7 @@ def build_email_html(
     return f"""<!DOCTYPE html>
 <html><body style="font-family:Georgia,serif;background:#0f1410;color:#e8efe6;padding:32px;">
   <div style="max-width:560px;margin:0 auto;background:#1a221c;padding:28px;border:1px solid #2d3b30;">
-    <div style="font-size:13px;letter-spacing:0.18em;text-transform:uppercase;color:#8fb389;">ProductWatch Rewards</div>
+    <div style="font-size:13px;letter-spacing:0.18em;text-transform:uppercase;color:#8fb389;">WatcherMart Rewards</div>
     <h1 style="font-weight:500;font-size:28px;margin:12px 0 8px;">Hi {name.split()[0]},</h1>
     <p style="font-size:20px;color:#c6e2bf;">{percent_off:.0f}% off {product_name}</p>
     {paras}
@@ -174,4 +174,23 @@ def deliver_marketing_email(
     if channel != "outbox":
         row.status = f"sent_{channel}"
         db.commit()
+
+    print(
+        f"\n===== EMAIL SENT =====\n"
+        f"To: {user.email}\n"
+        f"Subject: {subject}\n"
+        f"Product: {product_name} ({percent_off:.0f}% off)\n"
+        f"Delivery: {channel}"
+        + (f" ({provider_id})" if provider_id else "")
+        + f"\nOutbox: {out}\n"
+        f"======================\n",
+        flush=True,
+    )
+    logger.info(
+        "Email sent to=%s subject=%r product=%s channel=%s",
+        user.email,
+        subject,
+        product_name,
+        channel,
+    )
     return row
