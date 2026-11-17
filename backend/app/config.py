@@ -13,6 +13,8 @@ class Settings(BaseSettings):
     database_url: str = f"sqlite:///{(BACKEND_ROOT / 'data' / 'productwatch.db').as_posix()}"
     models_dir: Path = BACKEND_ROOT / "models"
     data_dir: Path = BACKEND_ROOT / "data"
+    outbox_dir: Path = BACKEND_ROOT / "data" / "outbox"
+    public_base_url: str = "http://127.0.0.1:8000"
 
     # Face matching
     face_match_threshold: float = 0.35  # cosine distance; lower = stricter
@@ -24,20 +26,16 @@ class Settings(BaseSettings):
     weight_cap: float = 100.0
     gaze_hit_radius_px: float = 100.0
     camera_id_default: str = "webcam-0"
-    # Seed zones were authored for this reference frame size
     zone_ref_width: float = 1280.0
     zone_ref_height: float = 720.0
-    # Screen-cursor mapping — head-primary; iris is a light assist near center
-    gaze_yaw_range_deg: float = 16.0  # smaller = easier to reach screen edges with head
+    gaze_yaw_range_deg: float = 16.0
     gaze_pitch_range_deg: float = 12.0
     gaze_head_weight: float = 1.0
     gaze_iris_weight: float = 0.18
-    # Fade iris assist as the head turns (iris deltas go wild under head rotation)
     gaze_iris_fade_yaw_deg: float = 6.0
     gaze_iris_fade_pitch_deg: float = 5.0
     gaze_smooth: float = 0.4
     gaze_calib_frames: int = 20
-    # +1 = looking right moves cursor right on mirrored preview; set -1 if still inverted
     gaze_x_sign: float = 1.0
     gaze_y_sign: float = 1.0
     aisle_fullscreen: bool = True
@@ -47,7 +45,21 @@ class Settings(BaseSettings):
     competitor_offer_percent: float = 10.0
     personalized_offer_percent: float = 15.0
 
+    # Marketing agent
+    agent_enabled: bool = True
+    agent_poll_seconds: float = 20.0
+    agent_min_interest_weight: float = 15.0
+    agent_min_hours_since_interest: float = 0.02  # ~1 min — low for demo; raise in prod
+    agent_max_hours_since_interest: float = 72.0
+    agent_cooldown_hours_per_user: float = 0.05  # ~3 min demo cooldown
+    agent_cooldown_hours_per_product: float = 12.0
+    openai_api_key: str | None = None
+    openai_model: str = "gpt-4o-mini"
+    marketing_from_name: str = "ProductWatch Rewards"
+    marketing_from_email: str = "rewards@productwatch.local"
+
 
 settings = Settings()
 settings.data_dir.mkdir(parents=True, exist_ok=True)
 settings.models_dir.mkdir(parents=True, exist_ok=True)
+settings.outbox_dir.mkdir(parents=True, exist_ok=True)

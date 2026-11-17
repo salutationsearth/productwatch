@@ -1,32 +1,26 @@
 # ProductWatch
 
-Hackathon backend + computer vision for supermarket shelf interest detection and a face-enrolled rewards program.
+Hackathon product for supermarket aisle interest detection, face-enrolled rewards, and an always-on marketing agent.
 
-Cameras (webcam in this demo) detect when a shopper looks at a product zone. Interest weights accumulate in SQLite. Rewards members get personalized discounts on products they stare at — and competitor offers meant to steal share.
+Cameras (webcam in this demo) detect when a shopper looks at a product zone. Interest weights + timestamps accumulate in SQLite. A marketing agent emails timely discounts. The marketing desk shows **anonymous** product interest and email funnels only.
 
 ## Architecture
 
 ```
-Webcam → Face enroll (YuNet + SFace embeddings)
-Webcam → Aisle loop (MediaPipe head-pose gaze → shelf zones → interest weights)
-SQLite → users, products, embeddings, interest, discounts, offers
-FastAPI → CRUD + session triggers
+Browser onboarding → name/email + webcam face frames → face embeddings
+Aisle webcam → head/eye gaze → shelf zones → interest weights + timestamps
+Marketing agent (loop) → decide/send email → outbox + tracking pixels
+Manager dashboard → aggregated interest & conversion (no shopper↔product PII)
 ```
 
-**CV approach (no custom gaze net):** compose pretrained OpenCV face recognition + MediaPipe Face Mesh head pose, map gaze to calibrated product rectangles, score interest with dwell-time heuristics. That is the right hackathon path; training from scratch needs labeled aisle video you do not have yet.
-
-### Later fine-tune path
-
-1. Export frames + features during aisle sessions (`gaze_x/y`, yaw/pitch, face area, zone id).
-2. Label `(features → product_id interested?)` offline.
-3. Train a small classifier (logistic / tiny MLP) on those features; swap it in for the dwell heuristic.
+**CV approach:** OpenCV YuNet/SFace face ID + MediaPipe FaceLandmarker head-pose gaze mapped to shelf zones. No custom gaze net required for the hackathon.
 
 ## Stack
 
-- FastAPI + Uvicorn
+- FastAPI + Jinja web UI
 - SQLAlchemy + SQLite
-- OpenCV (YuNet detect + SFace embed)
-- MediaPipe Tasks FaceLandmarker (head-pose gaze proxy)
+- OpenCV + MediaPipe
+- Background marketing agent (template emails; optional OpenAI draft via `PW_OPENAI_API_KEY`)
 
 ## Setup (Windows)
 
@@ -35,80 +29,78 @@ cd "C:\Users\marsj\OneDrive\Documents\Misc\cursor test\ProductWatch"
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-```
-
-Face models download automatically into `backend/models/` on first enroll/aisle run.
-
-## Demo flow
-
-### 1. Seed catalog + shelf zones
-
-```powershell
 python backend/scripts/seed_products.py
-```
-
-Zones are rectangles on the webcam preview (`camera_id=webcam-0`).
-
-### 2. Start API (optional for CLI demos)
-
-```powershell
 uvicorn backend.app.main:app --reload --app-dir .
 ```
 
-- Docs: http://127.0.0.1:8000/docs
-- Health: http://127.0.0.1:8000/health
+Open:
 
-### 3. Create a rewards user
+- Rewards signup: http://127.0.0.1:8000/onboard
+- Marketing desk: http://127.0.0.1:8000/dashboard
+- API docs: http://127.0.0.1:8000/docs
 
-```powershell
-curl -X POST http://127.0.0.1:8000/users -H "Content-Type: application/json" -d "{\"name\":\"Jacob\",\"email\":\"jacob@example.com\",\"is_rewards_member\":true}"
-```
+## Demo flow
 
-### 4. Enroll face (webcam window)
+### 1. Customer onboarding (web)
 
-```powershell
-python -m backend.cv.webcam_enroll 1
-```
+1. Go to `/onboard`
+2. Enter name + email
+3. Allow camera → **Start face scan** (browser captures frames, server stores embedding)
 
-Or `POST /users/{id}/enroll-face` (opens webcam on the server machine).
-
-### 5. Run aisle interest session
+### 2. Aisle interest (desktop CV)
 
 ```powershell
-python -m backend.cv.webcam_aisle --user-id 1 --seconds 45
+python -m backend.cv.webcam_aisle --user-id <id> --seconds 45
 ```
 
-1. Session opens **fullscreen**. Look at the **center** of the screen for ~0.7s (auto-calibrate). Press `C` to recalibrate, `F` to toggle fullscreen, `Q`/`Esc` to quit.
-2. **Aim with your head** toward a product box; eyes only fine-tune near center (iris fades while you turn).
-3. Yellow crosshair = gaze cursor. After ~1.5s dwell, interest weight bumps and offers refresh.
-4. If left/right still feels inverted: set env `PW_GAZE_X_SIGN=-1` and rerun.
+Aim with your **head** at product boxes. Interest events are timestamped (`first_seen_at` / `last_seen_at` + `interest_events.created_at`).
 
-### 6. Inspect interests + offers
+### 3. Marketing agent
+
+Runs automatically every ~20s while the API is up. It emails when:
+
+- member is face-enrolled with email
+- interest weight ≥ threshold
+- interest is fresh but not instantaneous (shopper had time to leave)
+- user/product cooldowns allow it
+
+Emails land in `backend/data/outbox/*.html` and are tracked via `/t/open`, `/t/click`, `/t/convert`.
+
+Force a demo send after aisle interest (or without waiting):
 
 ```powershell
-curl http://127.0.0.1:8000/users/1/interests
-curl http://127.0.0.1:8000/users/1/offers
+python backend/scripts/demo_interest_and_email.py
 ```
+
+Optional LLM copy:
+
+```powershell
+$env:PW_OPENAI_API_KEY="sk-..."
+```
+
+### 4. Marketing desk
+
+`/dashboard` shows:
+
+- KPI strip (members, events, conversion)
+- Product interest aggregates (shopper counts / weights — **no names**)
+- Email open / click / conversion rates by product
+- Agent run log
 
 ## Key API routes
 
 | Method | Path | Purpose |
 |--------|------|---------|
-| POST | `/users` | Create shopper / rewards member |
-| POST | `/users/{id}/enroll-face` | Webcam face enroll |
-| GET | `/users/{id}/interests` | Product interest weights |
-| GET | `/users/{id}/offers` | Personalized + competitor + member deals |
-| POST | `/products` | Add product |
-| PUT | `/cameras/{camera_id}/zones` | Replace shelf zone map |
-| POST | `/session/aisle/start` | Blocking webcam aisle session |
-
-## Interest + discounts
-
-- **Weight** on `user_product_interest` (0–100), bumped when gaze dwells in a zone.
-- **Personalized** offer when weight ≥ 15.
-- **Competitor** offer for another product in the same `competitor_group`.
-- **Member general** 5% deals for `is_rewards_member=true`.
+| POST | `/users` | Create rewards member |
+| POST | `/users/{id}/enroll-face-frames` | Browser webcam enrollment |
+| GET | `/users/{id}/interests` | Interest weights + timestamps |
+| GET | `/analytics/dashboard` | Anonymous aggregates |
+| GET | `/agent/status` | Agent heartbeat |
+| POST | `/agent/run-once` | Trigger one agent cycle |
+| GET | `/t/open/{token}.gif` | Open tracking |
+| GET | `/t/click/{token}` | Click tracking |
+| GET | `/t/convert/{token}` | Conversion / redeem |
 
 ## Privacy note
 
-Face embeddings (not raw photos) are stored for opt-in rewards ID. For a real supermarket deployment you would need clear consent, retention limits, and local regs (biometric laws). Hackathon demo only.
+Face embeddings (not raw photos) are stored for opt-in rewards ID. The marketing dashboard never lists which customer liked which product. Production needs clear consent and biometric compliance — hackathon demo only.

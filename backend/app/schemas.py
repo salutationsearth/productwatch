@@ -7,7 +7,7 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 class UserCreate(BaseModel):
     name: str = Field(min_length=1, max_length=120)
-    email: EmailStr | None = None
+    email: EmailStr
     is_rewards_member: bool = True
 
 
@@ -18,7 +18,9 @@ class UserOut(BaseModel):
     name: str
     email: str | None
     is_rewards_member: bool
+    face_enrolled: bool
     enrolled_at: datetime
+    face_enrolled_at: datetime | None = None
 
 
 class ProductCreate(BaseModel):
@@ -74,6 +76,8 @@ class InterestOut(BaseModel):
     product_id: int
     weight: float
     updated_at: datetime
+    first_seen_at: datetime | None = None
+    last_seen_at: datetime | None = None
     product_name: str | None = None
 
 
@@ -107,3 +111,49 @@ class AisleSessionResult(BaseModel):
     events_recorded: int
     interest_updates: list[InterestOut]
     offers: list[OfferOut]
+
+
+class ProductInterestAgg(BaseModel):
+    product_id: int
+    product_name: str
+    brand: str
+    category: str
+    interested_shopper_count: int
+    total_interest_weight: float
+    avg_interest_weight: float
+    interest_event_count: int
+    last_interest_at: datetime | None
+
+
+class EmailFunnelAgg(BaseModel):
+    product_id: int
+    product_name: str
+    emails_sent: int
+    opens: int
+    clicks: int
+    conversions: int
+    open_rate: float
+    click_rate: float
+    conversion_rate: float
+
+
+class DashboardSummary(BaseModel):
+    rewards_members: int
+    face_enrolled_members: int
+    products_tracked: int
+    interest_events_total: int
+    emails_sent_total: int
+    overall_open_rate: float
+    overall_click_rate: float
+    overall_conversion_rate: float
+    product_interest: list[ProductInterestAgg]
+    email_funnel: list[EmailFunnelAgg]
+    recent_agent_runs: list[dict]
+
+
+class AgentStatus(BaseModel):
+    enabled: bool
+    poll_seconds: float
+    last_run_at: datetime | None
+    last_summary: str | None
+    emails_sent_total: int

@@ -104,14 +104,45 @@ class FaceService:
         return best_user, best_dist
 
     def save_embedding(self, db: Session, user_id: int, embedding: np.ndarray) -> FaceEmbedding:
+        from datetime import datetime, timezone
+
         user = db.get(User, user_id)
         if user is None:
             raise ValueError(f"User {user_id} not found")
         row = FaceEmbedding(user_id=user_id, embedding=json.dumps(embedding.astype(float).tolist()))
+        user.face_enrolled = True
+        user.face_enrolled_at = datetime.now(timezone.utc)
         db.add(row)
         db.commit()
         db.refresh(row)
         return row
+
+    @staticmethod
+    def decode_image_bytes(data: bytes) -> np.ndarray:
+        arr = np.frombuffer(data, dtype=np.uint8)
+        frame = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+        if frame is None:
+            raise ValueError("Could not decode image")
+        return frame
+
+    def enroll_from_image_bytes(self, db: Session, user_id: int, images: list[bytes]) -> tuple[np.ndarray, int]:
+        embeddings: list[np.ndarray] = []
+        for blob in images:
+            try:
+                frame = self.decode_image_bytes(blob)
+            except ValueError:
+                continue
+            emb = self.embed_largest(frame)
+            if emb is not None:
+                embeddings.append(emb)
+        if len(embeddings) < 3:
+            raise RuntimeError(
+                f"Not enough face samples detected ({len(embeddings)}). Face the camera in good light."
+            )
+        avg = np.mean(np.stack(embeddings, axis=0), axis=0)
+        avg = avg / (np.linalg.norm(avg) + 1e-8)
+        self.save_embedding(db, user_id, avg)
+        return avg, len(embeddings)
 
 
 face_service = FaceService()

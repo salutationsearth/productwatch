@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="hero-onboard">
+  <div class="hero-copy">
+    <p class="eyebrow">Rewards program</p>
+    <h1 class="brand-lockup">ProductWatch</h1>
+    <p class="lede">Join once. Get recognized in the aisle. Receive offers on what you actually notice.</p>
+  </div>
+
+  <div class="onboard-flow" id="onboard-flow">
+    <ol class="steps" id="steps">
+      <li class="active" data-step="1">Details</li>
+      <li data-step="2">Face scan</li>
+      <li data-step="3">Done</li>
+    </ol>
+
+    <form id="signup-form" class="panel step-panel" data-panel="1">
+      <label>
+        Full name
+        <input name="name" type="text" required maxlength="120" placeholder="Alex Rivera" autocomplete="name" />
+      </label>
+      <label>
+        Email
+        <input name="email" type="email" required placeholder="alex@email.com" autocomplete="email" />
+      </label>
+      <p class="fineprint">By continuing you consent to storing a face embedding (not a photo) for in-store rewards identification.</p>
+      <button type="submit" class="btn primary">Continue to face scan</button>
+      <p class="error" id="signup-error" hidden></p>
+    </form>
+
+    <div class="panel step-panel" data-panel="2" hidden>
+      <p class="panel-title">Look at the camera</p>
+      <p class="panel-sub">We’ll capture a few frames to enroll you. Keep your face centered.</p>
+      <div class="camera-shell">
+        <video id="camera" autoplay playsinline muted></video>
+        <canvas id="capture" hidden></canvas>
+        <div class="scan-overlay" id="scan-overlay">Ready</div>
+      </div>
+      <div class="row">
+        <button type="button" class="btn primary" id="start-scan">Start face scan</button>
+        <button type="button" class="btn ghost" id="cancel-scan">Cancel</button>
+      </div>
+      <p class="error" id="scan-error" hidden></p>
+    </div>
+
+    <div class="panel step-panel success-panel" data-panel="3" hidden>
+      <p class="panel-title">You’re in</p>
+      <p class="panel-sub" id="done-copy">Rewards member enrolled. Walk the aisle demo next — personalized offers follow when interest is detected.</p>
+      <div class="row">
+        <a class="btn primary" href="/dashboard">View marketing desk</a>
+        <a class="btn ghost" href="/docs">API docs</a>
+      </div>
+    </div>
+  </div>
+</section>
+{% endblock %}
+{% block scripts %}
+<script src="/static/js/onboard.js"></script>
+{% endblock %}

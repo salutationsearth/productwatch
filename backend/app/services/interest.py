@@ -20,7 +20,14 @@ def get_or_create_interest(db: Session, user_id: int, product_id: int) -> UserPr
     )
     if row:
         return row
-    row = UserProductInterest(user_id=user_id, product_id=product_id, weight=0.0)
+    now = datetime.now(timezone.utc)
+    row = UserProductInterest(
+        user_id=user_id,
+        product_id=product_id,
+        weight=0.0,
+        first_seen_at=now,
+        last_seen_at=now,
+    )
     db.add(row)
     db.flush()
     return row
@@ -38,17 +45,20 @@ def bump_interest(
 ) -> UserProductInterest:
     """
     Additive capped weight update with diminishing returns for long stares.
-    proximity is face_area_ratio (0-1-ish) used as a weak attention prior.
+    Timestamps every dwell so the marketing agent knows how fresh the interest is.
     """
     base = settings.weight_bump
     dwell_factor = min(dwell_seconds / settings.dwell_seconds, 3.0)
     prox_factor = 1.0 + min(max(proximity, 0.0), 0.15) * 2.0
     delta = base * dwell_factor * prox_factor
-    # Diminishing returns as weight grows.
+    now = datetime.now(timezone.utc)
     interest = get_or_create_interest(db, user_id, product_id)
     scale = 1.0 - (interest.weight / settings.weight_cap) * 0.7
     interest.weight = min(settings.weight_cap, interest.weight + delta * max(scale, 0.2))
-    interest.updated_at = datetime.now(timezone.utc)
+    interest.updated_at = now
+    interest.last_seen_at = now
+    if interest.first_seen_at is None:
+        interest.first_seen_at = now
 
     db.add(
         InterestEvent(
@@ -58,6 +68,7 @@ def bump_interest(
             dwell_seconds=dwell_seconds,
             gaze_x=gaze_x,
             gaze_y=gaze_y,
+            created_at=now,
         )
     )
     db.commit()
@@ -78,6 +89,8 @@ def list_interests(db: Session, user_id: int) -> list[InterestOut]:
             product_id=interest.product_id,
             weight=interest.weight,
             updated_at=interest.updated_at,
+            first_seen_at=interest.first_seen_at,
+            last_seen_at=interest.last_seen_at,
             product_name=product.name,
         )
         for interest, product in rows

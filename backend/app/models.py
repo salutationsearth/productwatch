@@ -32,7 +32,10 @@ class User(Base):
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     email: Mapped[str | None] = mapped_column(String(255), unique=True, nullable=True)
     is_rewards_member: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    face_enrolled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     enrolled_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    face_enrolled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_marketing_email_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     embeddings: Mapped[list[FaceEmbedding]] = relationship(back_populates="user", cascade="all, delete-orphan")
     interests: Mapped[list[UserProductInterest]] = relationship(
@@ -40,6 +43,9 @@ class User(Base):
     )
     offers: Mapped[list[UserOffer]] = relationship(back_populates="user", cascade="all, delete-orphan")
     interest_events: Mapped[list[InterestEvent]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
+    marketing_emails: Mapped[list[MarketingEmail]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )
 
@@ -70,6 +76,7 @@ class Product(Base):
     interests: Mapped[list[UserProductInterest]] = relationship(back_populates="product")
     discounts: Mapped[list[Discount]] = relationship(back_populates="product")
     offers: Mapped[list[UserOffer]] = relationship(back_populates="product")
+    marketing_emails: Mapped[list[MarketingEmail]] = relationship(back_populates="product")
 
 
 class ProductZone(Base):
@@ -97,7 +104,7 @@ class InterestEvent(Base):
     dwell_seconds: Mapped[float] = mapped_column(Float, nullable=False)
     gaze_x: Mapped[float | None] = mapped_column(Float, nullable=True)
     gaze_y: Mapped[float | None] = mapped_column(Float, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
 
     user: Mapped[User] = relationship(back_populates="interest_events")
     product: Mapped[Product] = relationship()
@@ -111,6 +118,10 @@ class UserProductInterest(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     product_id: Mapped[int] = mapped_column(ForeignKey("products.id", ondelete="CASCADE"), nullable=False)
     weight: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    last_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
@@ -150,3 +161,41 @@ class UserOffer(Base):
 
     user: Mapped[User] = relationship(back_populates="offers")
     product: Mapped[Product] = relationship(back_populates="offers")
+
+
+class MarketingEmail(Base):
+    """Outbound marketing message. Dashboard aggregates only — never expose user↔product in UI."""
+
+    __tablename__ = "marketing_emails"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    tracking_token: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    product_id: Mapped[int] = mapped_column(ForeignKey("products.id", ondelete="CASCADE"), nullable=False, index=True)
+    offer_id: Mapped[int | None] = mapped_column(ForeignKey("user_offers.id", ondelete="SET NULL"), nullable=True)
+    subject: Mapped[str] = mapped_column(String(255), nullable=False)
+    body_text: Mapped[str] = mapped_column(Text, nullable=False)
+    body_html: Mapped[str] = mapped_column(Text, nullable=False)
+    percent_off: Mapped[float] = mapped_column(Float, nullable=False)
+    agent_rationale: Mapped[str] = mapped_column(Text, nullable=False)
+    interest_weight_at_send: Mapped[float] = mapped_column(Float, nullable=False)
+    interest_last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    hours_since_interest: Mapped[float | None] = mapped_column(Float, nullable=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="sent")
+    sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+    opened_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    clicked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    converted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    user: Mapped[User] = relationship(back_populates="marketing_emails")
+    product: Mapped[Product] = relationship(back_populates="marketing_emails")
+
+
+class AgentRunLog(Base):
+    __tablename__ = "agent_run_logs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    candidates_reviewed: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    emails_sent: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    summary: Mapped[str] = mapped_column(Text, nullable=False, default="")

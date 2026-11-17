@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="offer-page panel">
+  <p class="eyebrow">Member offer</p>
+  <h1>{{ percent_off|int }}% off {{ product_name }}</h1>
+  {% if redeemed %}
+  <p class="badge">Marked redeemed — thanks</p>
+  {% endif %}
+  <p class="lede">{{ subject }}</p>
+  <div class="offer-body">{{ body_html | safe }}</div>
+  {% if not redeemed %}
+  <a class="btn primary" href="/t/convert/{{ token }}">Mark as redeemed</a>
+  {% endif %}
+</section>
+{% endblock %}

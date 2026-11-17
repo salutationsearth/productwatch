@@ -1,24 +1,27 @@
-from fastapi import APIRouter, Depends, HTTPException
+from datetime import datetime, timezone
+
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
 from backend.app.db import get_db
 from backend.app.models import Product, User, UserProductInterest
 from backend.app.schemas import EnrollFaceResponse, InterestOut, OfferOut, UserCreate, UserOut
 from backend.app.services.discounts import list_user_offers
+from backend.app.services.face import face_service
 
 router = APIRouter(prefix="/users", tags=["users"])
 
 
 @router.post("", response_model=UserOut, status_code=201)
 def create_user(payload: UserCreate, db: Session = Depends(get_db)) -> User:
-    if payload.email:
-        existing = db.query(User).filter(User.email == payload.email).first()
-        if existing:
-            raise HTTPException(status_code=409, detail="Email already registered")
+    existing = db.query(User).filter(User.email == payload.email).first()
+    if existing:
+        raise HTTPException(status_code=409, detail="Email already registered")
     user = User(
         name=payload.name,
-        email=payload.email,
+        email=str(payload.email),
         is_rewards_member=payload.is_rewards_member,
+        face_enrolled=False,
     )
     db.add(user)
     db.commit()
@@ -49,8 +52,39 @@ def enroll_face(user_id: int, camera_index: int = 0, db: Session = Depends(get_d
         from backend.cv.webcam_enroll import enroll_from_webcam
 
         embedding, samples = enroll_from_webcam(db, user_id, camera_index=camera_index)
+        user.face_enrolled = True
+        user.face_enrolled_at = datetime.now(timezone.utc)
+        db.commit()
     except RuntimeError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return EnrollFaceResponse(
+        user_id=user_id,
+        samples_captured=samples,
+        embedding_dim=int(embedding.shape[0]),
+        message="Face enrolled for rewards identification",
+    )
+
+
+@router.post("/{user_id}/enroll-face-frames", response_model=EnrollFaceResponse)
+async def enroll_face_frames(
+    user_id: int,
+    frames: list[UploadFile] = File(...),
+    db: Session = Depends(get_db),
+) -> EnrollFaceResponse:
+    """Browser webcam enrollment: accept JPEG/PNG frames, average embeddings, store."""
+    user = db.get(User, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    if not frames:
+        raise HTTPException(status_code=400, detail="No frames uploaded")
+    blobs: list[bytes] = []
+    for f in frames[:24]:
+        blobs.append(await f.read())
+    try:
+        embedding, samples = face_service.enroll_from_image_bytes(db, user_id, blobs)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    db.refresh(user)
     return EnrollFaceResponse(
         user_id=user_id,
         samples_captured=samples,
@@ -76,6 +110,8 @@ def get_interests(user_id: int, db: Session = Depends(get_db)) -> list[InterestO
             product_id=interest.product_id,
             weight=interest.weight,
             updated_at=interest.updated_at,
+            first_seen_at=interest.first_seen_at,
+            last_seen_at=interest.last_seen_at,
             product_name=product.name,
         )
         for interest, product in rows
