@@ -90,6 +90,9 @@ class Settings(BaseSettings):
     manager_username: str = "manager"
     manager_password: str = "manager"
 
+    # Local aisle CV client → server API key (header: X-Aisle-Key or Authorization Bearer)
+    aisle_api_key: str = "change-me-aisle-client-key"
+
 
 settings = Settings()
 settings.data_dir.mkdir(parents=True, exist_ok=True)

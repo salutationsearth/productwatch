@@ -34,7 +34,10 @@ PW_MCP_STATELESS_HTTP=true
 PW_MCP_PUBLIC_URL=https://mcp.productwatch.jacob-yu.com/mcp
 PW_MCP_AUTH_TOKEN=<long-random-secret>
 PW_SESSION_SECRET=<another-long-secret>
+PW_AISLE_API_KEY=<key-shared-with-your-local-aisle-script>
 ```
+
+The VPS never opens a webcam. Customers enroll via browser camera; aisle interest is recorded by the local CV script on your PC posting to `/api/aisle/*`.
 
 ## systemd
 

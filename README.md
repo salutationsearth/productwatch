@@ -5,19 +5,17 @@ Hackathon supermarket demo: aisle interest detection, Rewards face enrollment, a
 ## Architecture
 
 ```
-WatcherMart web app (FastAPI)
-  - Customer: signup, face enroll, my interest
-  - Manager: anonymous product interest + emails reported by the agent
-  - Tracking links: /t/click /t/convert /t/open
+Browser (any device) → WatcherMart web
+  - Rewards signup + face enroll (browser webcam → server)
+  - Customer account / manager dashboard
 
-Aisle CV (webcam) → interest weights + timestamps in SQLite
+Your PC (local) → aisle CV demo
+  - webcam + gaze locally
+  - POST interest to https://productwatch.jacob-yu.com/api/aisle/*
 
-MCP server (stdio) ← OpenAI marketing agent
-  list_customer_interests
-  create_discount_link
-  report_email_sent
-  list_sent_emails
-  get_link_conversion
+VPS server (no webcam)
+  - stores users, embeddings, interest, emails
+  - MCP at mcp.productwatch.jacob-yu.com for OpenAI agent
 ```
 
 ## Setup
@@ -81,11 +79,20 @@ System prompt: [AGENT_SYSTEM_PROMPT.md](AGENT_SYSTEM_PROMPT.md).
 3. Send the email with your own email channel  
 4. `report_email_sent` → appears on the manager dashboard  
 
-## Aisle interest demo
+## Aisle interest demo (runs on YOUR PC, talks to the server)
+
+1. Sign up + face enroll on the website (`/rewards`).
+2. On your computer (venv active, same API key as server `PW_AISLE_API_KEY`):
 
 ```powershell
-python -m backend.cv.webcam_aisle --user-id <id> --seconds 45
+python -m backend.cv.webcam_aisle `
+  --server https://productwatch.jacob-yu.com `
+  --api-key change-me-aisle-client-key `
+  --user-id <id>
 ```
+
+Omit `--user-id` to face-match against enrollments downloaded from the server.  
+Interest events are POSTed to the VPS — the server never opens a webcam.
 
 ## Config
 

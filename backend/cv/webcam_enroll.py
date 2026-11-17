@@ -1,4 +1,8 @@
-"""Capture webcam frames and average face embeddings for enrollment."""
+"""Local-only OpenCV webcam enrollment helper.
+
+Production onboarding uses the browser → POST /users/{id}/enroll-face-frames.
+The VPS never opens a camera; this CLI is optional for offline testing.
+"""
 
 from __future__ import annotations
 

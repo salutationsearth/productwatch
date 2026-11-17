@@ -1,5 +1,3 @@
-from datetime import datetime, timezone
-
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
@@ -42,36 +40,15 @@ def get_user(user_id: int, db: Session = Depends(get_db)) -> User:
     return user
 
 
-@router.post("/{user_id}/enroll-face", response_model=EnrollFaceResponse)
-def enroll_face(user_id: int, camera_index: int = 0, db: Session = Depends(get_db)) -> EnrollFaceResponse:
-    """Opens the server-side webcam to capture and store a face embedding."""
-    user = db.get(User, user_id)
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-    try:
-        from backend.cv.webcam_enroll import enroll_from_webcam
-
-        embedding, samples = enroll_from_webcam(db, user_id, camera_index=camera_index)
-        user.face_enrolled = True
-        user.face_enrolled_at = datetime.now(timezone.utc)
-        db.commit()
-    except RuntimeError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return EnrollFaceResponse(
-        user_id=user_id,
-        samples_captured=samples,
-        embedding_dim=int(embedding.shape[0]),
-        message="Face enrolled for rewards identification",
-    )
-
-
 @router.post("/{user_id}/enroll-face-frames", response_model=EnrollFaceResponse)
 async def enroll_face_frames(
     user_id: int,
     frames: list[UploadFile] = File(...),
     db: Session = Depends(get_db),
 ) -> EnrollFaceResponse:
-    """Browser webcam enrollment: accept JPEG/PNG frames, average embeddings, store."""
+    """Browser webcam enrollment: accept JPEG/PNG frames, average embeddings, store.
+    Server never opens a camera — frames come from the browser.
+    """
     user = db.get(User, user_id)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")

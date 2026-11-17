@@ -5,7 +5,18 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
-from backend.app.api import analytics, auth, cameras, health, pages, products, sessions, tracking, users
+from backend.app.api import (
+    aisle,
+    analytics,
+    auth,
+    cameras,
+    health,
+    pages,
+    products,
+    sessions,
+    tracking,
+    users,
+)
 from backend.app.config import settings
 from backend.app.db import init_db
 
@@ -27,6 +38,7 @@ app.include_router(auth.router)
 app.include_router(users.router)
 app.include_router(products.router)
 app.include_router(cameras.router)
+app.include_router(aisle.router)
 app.include_router(sessions.router)
 app.include_router(analytics.router)
 app.include_router(tracking.router)
