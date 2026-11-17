@@ -1,0 +1,50 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+ENV/
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# IDE / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+
+# App data / models / captures
+*.db
+*.sqlite
+*.sqlite3
+backend/data/
+backend/models/
+*.onnx
+insightface/
+.insightface/
+~/.insightface/
+
+# Webcam dumps / debug frames
+*.avi
+*.mp4
+captures/
+frames/
+*.jpg
+*.jpeg
+*.png
+!docs/**/*.png
+
+# Env
+.env
+.env.local
+*.log
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
