@@ -1,15 +1,21 @@
-"""Persist marketing emails to DB + local outbox (demo-friendly, no SMTP required)."""
+"""Deliver marketing emails: always write outbox; optionally send via Resend or SMTP."""
 
 from __future__ import annotations
 
+import logging
 import secrets
+import smtplib
 from datetime import datetime, timezone
+from email.message import EmailMessage
 from pathlib import Path
 
+import httpx
 from sqlalchemy.orm import Session
 
 from backend.app.config import settings
 from backend.app.models import MarketingEmail, User
+
+logger = logging.getLogger(__name__)
 
 
 def _tracking_urls(token: str) -> dict[str, str]:
@@ -49,6 +55,60 @@ def build_email_html(
   </div>
   <img src="{urls['open']}" width="1" height="1" alt="" />
 </body></html>"""
+
+
+def _send_resend(*, to_email: str, subject: str, html: str, text: str) -> str | None:
+    if not settings.resend_api_key:
+        return None
+    payload = {
+        "from": f"{settings.marketing_from_name} <{settings.marketing_from_email}>",
+        "to": [to_email],
+        "subject": subject,
+        "html": html,
+        "text": text,
+    }
+    resp = httpx.post(
+        "https://api.resend.com/emails",
+        headers={"Authorization": f"Bearer {settings.resend_api_key}"},
+        json=payload,
+        timeout=20.0,
+    )
+    resp.raise_for_status()
+    return str(resp.json().get("id") or "resend-ok")
+
+
+def _send_smtp(*, to_email: str, subject: str, html: str, text: str) -> str | None:
+    if not settings.smtp_host or not settings.smtp_username or not settings.smtp_password:
+        return None
+    msg = EmailMessage()
+    msg["Subject"] = subject
+    msg["From"] = f"{settings.marketing_from_name} <{settings.marketing_from_email}>"
+    msg["To"] = to_email
+    msg.set_content(text)
+    msg.add_alternative(html, subtype="html")
+    with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=20) as smtp:
+        if settings.smtp_use_tls:
+            smtp.starttls()
+        smtp.login(settings.smtp_username, settings.smtp_password)
+        smtp.send_message(msg)
+    return "smtp-ok"
+
+
+def _try_send_live(*, to_email: str, subject: str, html: str, text: str) -> tuple[str, str | None]:
+    """Returns (channel, provider_id). channel is outbox|resend|smtp."""
+    provider = (settings.email_provider or "outbox").lower().strip()
+    try:
+        if provider == "resend":
+            pid = _send_resend(to_email=to_email, subject=subject, html=html, text=text)
+            if pid:
+                return "resend", pid
+        if provider == "smtp":
+            pid = _send_smtp(to_email=to_email, subject=subject, html=html, text=text)
+            if pid:
+                return "smtp", pid
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Live email send failed (%s); kept outbox copy: %s", provider, exc)
+    return "outbox", None
 
 
 def deliver_marketing_email(
@@ -96,10 +156,22 @@ def deliver_marketing_email(
     db.commit()
     db.refresh(row)
 
-    out: Path = settings.outbox_dir / f"email_{row.id}_{token[:8]}.html"
-    out.write_text(
-        f"To: {user.email}\nFrom: {settings.marketing_from_name} <{settings.marketing_from_email}>\n"
-        f"Subject: {subject}\n\n{body_html}",
-        encoding="utf-8",
+    channel, provider_id = _try_send_live(
+        to_email=str(user.email),
+        subject=subject,
+        html=body_html,
+        text=body_text,
     )
+    out: Path = settings.outbox_dir / f"email_{row.id}_{token[:8]}.html"
+    header = (
+        f"To: {user.email}\n"
+        f"From: {settings.marketing_from_name} <{settings.marketing_from_email}>\n"
+        f"Subject: {subject}\n"
+        f"X-Delivery: {channel}\n"
+        f"X-Provider-Id: {provider_id or '-'}\n\n"
+    )
+    out.write_text(header + body_html, encoding="utf-8")
+    if channel != "outbox":
+        row.status = f"sent_{channel}"
+        db.commit()
     return row

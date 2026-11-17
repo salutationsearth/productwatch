@@ -1,15 +1,12 @@
-"""Always-on marketing agent: decide when to email shoppers based on fresh interest."""
+"""Always-on marketing agent: decide when to email, then LLM-draft the copy."""
 
 from __future__ import annotations
 
-import json
 import logging
 import threading
-import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
-import httpx
 from sqlalchemy.orm import Session
 
 from backend.app.config import settings
@@ -17,6 +14,7 @@ from backend.app.db import SessionLocal
 from backend.app.models import AgentRunLog, MarketingEmail, Product, User, UserOffer, UserProductInterest
 from backend.app.services.discounts import refresh_offers_for_user
 from backend.app.services.emailer import deliver_marketing_email
+from backend.app.services.llm_drafter import DraftBrief, draft_marketing_email
 
 logger = logging.getLogger(__name__)
 
@@ -46,83 +44,6 @@ def _hours_since(dt: datetime | None, now: datetime) -> float | None:
     if dt is None:
         return None
     return (now - dt).total_seconds() / 3600.0
-
-
-def _draft_with_openai(
-    *,
-    name: str,
-    product_name: str,
-    brand: str,
-    percent_off: float,
-    weight: float,
-    hours_since: float,
-    rationale: str,
-) -> tuple[str, list[str]] | None:
-    if not settings.openai_api_key:
-        return None
-    prompt = {
-        "model": settings.openai_model,
-        "messages": [
-            {
-                "role": "system",
-                "content": (
-                    "You write short supermarket rewards emails. Return JSON with keys "
-                    "subject (string) and paragraphs (array of 2-3 short strings). "
-                    "No emoji. Warm, specific, not creepy. Do not mention cameras or face scanning."
-                ),
-            },
-            {
-                "role": "user",
-                "content": (
-                    f"Shopper first name: {name.split()[0]}\n"
-                    f"Product: {product_name} ({brand})\n"
-                    f"Discount: {percent_off:.0f}%\n"
-                    f"Interest weight: {weight:.1f}/100\n"
-                    f"Hours since last aisle interest: {hours_since:.2f}\n"
-                    f"Agent rationale: {rationale}\n"
-                ),
-            },
-        ],
-        "response_format": {"type": "json_object"},
-        "temperature": 0.7,
-    }
-    try:
-        resp = httpx.post(
-            "https://api.openai.com/v1/chat/completions",
-            headers={"Authorization": f"Bearer {settings.openai_api_key}"},
-            json=prompt,
-            timeout=20.0,
-        )
-        resp.raise_for_status()
-        content = resp.json()["choices"][0]["message"]["content"]
-        data = json.loads(content)
-        subject = str(data["subject"]).strip()
-        paragraphs = [str(p).strip() for p in data["paragraphs"] if str(p).strip()]
-        if subject and paragraphs:
-            return subject, paragraphs
-    except Exception as exc:  # noqa: BLE001 — fall back to template
-        logger.warning("OpenAI draft failed: %s", exc)
-    return None
-
-
-def _draft_template(
-    *,
-    name: str,
-    product_name: str,
-    brand: str,
-    percent_off: float,
-    hours_since: float,
-) -> tuple[str, list[str]]:
-    first = name.split()[0]
-    freshness = "earlier today" if hours_since < 12 else "recently"
-    subject = f"{first}, {percent_off:.0f}% off {product_name} is waiting"
-    paragraphs = [
-        f"You spent a little time with {product_name} on the shelf {freshness} — "
-        f"so we reserved a members-only {percent_off:.0f}% discount on {brand}.",
-        "Show this email at checkout or tap through to save it to your rewards wallet. "
-        "Offer applies to rewards members while supplies last.",
-    ]
-    return subject, paragraphs
 
 
 def evaluate_candidate(
@@ -213,25 +134,21 @@ def run_agent_once(db: Session | None = None) -> AgentRunLog:
             percent = offer.percent_off if offer else settings.personalized_offer_percent
             hours = _hours_since(interest.last_seen_at, now) or 0.0
 
-            drafted = _draft_with_openai(
-                name=user.name,
-                product_name=product.name,
-                brand=product.brand,
-                percent_off=percent,
-                weight=interest.weight,
-                hours_since=hours,
-                rationale=rationale,
-            )
-            if drafted is None:
-                subject, paragraphs = _draft_template(
+            draft = draft_marketing_email(
+                DraftBrief(
                     name=user.name,
                     product_name=product.name,
                     brand=product.brand,
+                    category=product.category,
                     percent_off=percent,
+                    weight=interest.weight,
                     hours_since=hours,
+                    rationale=rationale,
                 )
-            else:
-                subject, paragraphs = drafted
+            )
+            full_rationale = (
+                f"{rationale} | llm={draft.provider}/{draft.model} angle={draft.angle}"
+            )
 
             deliver_marketing_email(
                 db,
@@ -239,19 +156,22 @@ def run_agent_once(db: Session | None = None) -> AgentRunLog:
                 product_id=product.id,
                 product_name=product.name,
                 percent_off=percent,
-                subject=subject,
-                paragraphs=paragraphs,
-                rationale=rationale,
+                subject=draft.subject,
+                paragraphs=draft.paragraphs,
+                rationale=full_rationale,
                 interest_weight=interest.weight,
                 interest_last_seen_at=_aware(interest.last_seen_at),
                 hours_since_interest=hours,
                 offer_id=offer.id if offer else None,
             )
             sent += 1
-            notes.append(f"emailed product={product.sku} weight={interest.weight:.1f}")
+            notes.append(
+                f"emailed product={product.sku} via {draft.provider} angle={draft.angle}"
+            )
 
         summary = (
-            f"Reviewed {reviewed} interest rows; sent {sent} email(s). "
+            f"Reviewed {reviewed} interest rows; sent {sent} email(s) "
+            f"(llm_provider={settings.llm_provider}). "
             + ("; ".join(notes) if notes else "No sends this cycle.")
         )
         log = AgentRunLog(
@@ -288,7 +208,12 @@ def start_marketing_agent() -> None:
     agent_state.stop_event = threading.Event()
     agent_state.thread = threading.Thread(target=_loop, name="marketing-agent", daemon=True)
     agent_state.thread.start()
-    logger.info("Marketing agent started (poll=%ss)", settings.agent_poll_seconds)
+    logger.info(
+        "Marketing agent started (poll=%ss, llm=%s, email=%s)",
+        settings.agent_poll_seconds,
+        settings.llm_provider,
+        settings.email_provider,
+    )
 
 
 def stop_marketing_agent() -> None:

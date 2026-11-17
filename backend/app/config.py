@@ -53,8 +53,18 @@ class Settings(BaseSettings):
     agent_max_hours_since_interest: float = 72.0
     agent_cooldown_hours_per_user: float = 0.05  # ~3 min demo cooldown
     agent_cooldown_hours_per_product: float = 12.0
+    # LLM drafting: mock (default, no API) | openai
+    llm_provider: str = "mock"
     openai_api_key: str | None = None
     openai_model: str = "gpt-4o-mini"
+    # Email delivery: outbox (default) | resend | smtp
+    email_provider: str = "outbox"
+    resend_api_key: str | None = None
+    smtp_host: str | None = None
+    smtp_port: int = 587
+    smtp_username: str | None = None
+    smtp_password: str | None = None
+    smtp_use_tls: bool = True
     marketing_from_name: str = "ProductWatch Rewards"
     marketing_from_email: str = "rewards@productwatch.local"
 
