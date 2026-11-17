@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.db import get_db
 from backend.app.models import Product, User, UserProductInterest
-from backend.app.schemas import InterestOut, OfferOut, UserCreate, UserOut
+from backend.app.schemas import EnrollFaceResponse, InterestOut, OfferOut, UserCreate, UserOut
 from backend.app.services.discounts import list_user_offers
 
 router = APIRouter(prefix="/users", tags=["users"])
@@ -37,6 +37,26 @@ def get_user(user_id: int, db: Session = Depends(get_db)) -> User:
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     return user
+
+
+@router.post("/{user_id}/enroll-face", response_model=EnrollFaceResponse)
+def enroll_face(user_id: int, camera_index: int = 0, db: Session = Depends(get_db)) -> EnrollFaceResponse:
+    """Opens the server-side webcam to capture and store a face embedding."""
+    user = db.get(User, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    try:
+        from backend.cv.webcam_enroll import enroll_from_webcam
+
+        embedding, samples = enroll_from_webcam(db, user_id, camera_index=camera_index)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return EnrollFaceResponse(
+        user_id=user_id,
+        samples_captured=samples,
+        embedding_dim=int(embedding.shape[0]),
+        message="Face enrolled for rewards identification",
+    )
 
 
 @router.get("/{user_id}/interests", response_model=list[InterestOut])
