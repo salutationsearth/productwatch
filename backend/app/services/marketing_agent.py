@@ -53,7 +53,7 @@ def evaluate_candidate(
     product: Product,
     now: datetime,
 ) -> tuple[bool, str]:
-    """Return (should_send, rationale)."""
+    """Return (should_send, rationale) for the scheduled agent loop."""
     if not user.email or not user.is_rewards_member or not user.face_enrolled:
         return False, "skip: not a fully enrolled rewards member with email"
 
@@ -94,7 +94,103 @@ def evaluate_candidate(
     )
 
 
-def run_agent_once(db: Session | None = None) -> AgentRunLog:
+def conversion_score(interest: UserProductInterest, user: User, now: datetime) -> float:
+    """
+    Heuristic 'likely conversion' score for forced sends.
+    Higher weight + fresher interest wins; enrolled members preferred.
+    """
+    hours = _hours_since(interest.last_seen_at, now)
+    if hours is None:
+        freshness = 0.0
+    elif hours <= 0:
+        freshness = 1.0
+    else:
+        # Decay over ~48h; very fresh still scores high even if "too soon" for the loop.
+        freshness = max(0.05, 1.0 / (1.0 + hours / 6.0))
+
+    enrolled_bonus = 1.0 if (user.email and user.is_rewards_member and user.face_enrolled) else 0.35
+    return float(interest.weight) * freshness * enrolled_bonus
+
+
+def _send_for_interest(
+    db: Session,
+    interest: UserProductInterest,
+    user: User,
+    product: Product,
+    now: datetime,
+    rationale: str,
+) -> str:
+    refresh_offers_for_user(db, user.id)
+    offer = (
+        db.query(UserOffer)
+        .filter(
+            UserOffer.user_id == user.id,
+            UserOffer.product_id == product.id,
+            UserOffer.active.is_(True),
+        )
+        .order_by(UserOffer.percent_off.desc())
+        .first()
+    )
+    percent = offer.percent_off if offer else settings.personalized_offer_percent
+    hours = _hours_since(interest.last_seen_at, now) or 0.0
+
+    draft = draft_marketing_email(
+        DraftBrief(
+            name=user.name,
+            product_name=product.name,
+            brand=product.brand,
+            category=product.category,
+            percent_off=percent,
+            weight=interest.weight,
+            hours_since=hours,
+            rationale=rationale,
+        )
+    )
+    full_rationale = f"{rationale} | llm={draft.provider}/{draft.model} angle={draft.angle}"
+
+    deliver_marketing_email(
+        db,
+        user=user,
+        product_id=product.id,
+        product_name=product.name,
+        percent_off=percent,
+        subject=draft.subject,
+        paragraphs=draft.paragraphs,
+        rationale=full_rationale,
+        interest_weight=interest.weight,
+        interest_last_seen_at=_aware(interest.last_seen_at),
+        hours_since_interest=hours,
+        offer_id=offer.id if offer else None,
+    )
+    return f"emailed product={product.sku} via {draft.provider} angle={draft.angle}"
+
+
+def pick_best_conversion_candidate(
+    db: Session,
+    now: datetime,
+) -> tuple[UserProductInterest, User, Product, float] | None:
+    """Best (interest, user, product, score) among emailable members, ignoring timing gates."""
+    interests = db.query(UserProductInterest).order_by(UserProductInterest.weight.desc()).all()
+    best: tuple[UserProductInterest, User, Product, float] | None = None
+    for interest in interests:
+        user = db.get(User, interest.user_id)
+        product = db.get(Product, interest.product_id)
+        if not user or not product or not user.email:
+            continue
+        if not user.is_rewards_member:
+            continue
+        score = conversion_score(interest, user, now)
+        if best is None or score > best[3]:
+            best = (interest, user, product, score)
+    return best
+
+
+def run_agent_once(db: Session | None = None, *, force: bool = False) -> AgentRunLog:
+    """
+    Scheduled cycle respects cooldowns/timing.
+    force=True (dashboard "Run agent now") always sends one email to the
+    likeliest conversion candidate.
+    """
     own_session = db is None
     db = db or SessionLocal()
     now = datetime.now(timezone.utc)
@@ -103,74 +199,77 @@ def run_agent_once(db: Session | None = None) -> AgentRunLog:
     notes: list[str] = []
 
     try:
-        interests = (
-            db.query(UserProductInterest)
-            .filter(UserProductInterest.weight >= settings.agent_min_interest_weight)
-            .order_by(UserProductInterest.weight.desc())
-            .limit(50)
-            .all()
-        )
-        for interest in interests:
-            reviewed += 1
-            user = db.get(User, interest.user_id)
-            product = db.get(Product, interest.product_id)
-            if not user or not product:
-                continue
-            ok, rationale = evaluate_candidate(db, interest, user, product, now)
-            if not ok:
-                continue
-
-            refresh_offers_for_user(db, user.id)
-            offer = (
-                db.query(UserOffer)
-                .filter(
-                    UserOffer.user_id == user.id,
-                    UserOffer.product_id == product.id,
-                    UserOffer.active.is_(True),
+        if force:
+            interests = db.query(UserProductInterest).all()
+            reviewed = len(interests)
+            best = pick_best_conversion_candidate(db, now)
+            if best is None:
+                # No interest rows yet — fall back to any emailable enrolled user + top product.
+                user = (
+                    db.query(User)
+                    .filter(User.email.isnot(None), User.is_rewards_member.is_(True))
+                    .order_by(User.face_enrolled.desc(), User.id.desc())
+                    .first()
                 )
-                .order_by(UserOffer.percent_off.desc())
-                .first()
-            )
-            percent = offer.percent_off if offer else settings.personalized_offer_percent
-            hours = _hours_since(interest.last_seen_at, now) or 0.0
-
-            draft = draft_marketing_email(
-                DraftBrief(
-                    name=user.name,
-                    product_name=product.name,
-                    brand=product.brand,
-                    category=product.category,
-                    percent_off=percent,
-                    weight=interest.weight,
-                    hours_since=hours,
-                    rationale=rationale,
+                product = db.query(Product).order_by(Product.id).first()
+                if user and product:
+                    interest = (
+                        db.query(UserProductInterest)
+                        .filter(
+                            UserProductInterest.user_id == user.id,
+                            UserProductInterest.product_id == product.id,
+                        )
+                        .first()
+                    )
+                    if interest is None:
+                        interest = UserProductInterest(
+                            user_id=user.id,
+                            product_id=product.id,
+                            weight=max(settings.agent_min_interest_weight, 20.0),
+                            first_seen_at=now,
+                            last_seen_at=now,
+                        )
+                        db.add(interest)
+                        db.flush()
+                    rationale = (
+                        "force-send: no scored interest yet — seeded top product for "
+                        f"{product.name} (demo fallback)"
+                    )
+                    notes.append(_send_for_interest(db, interest, user, product, now, rationale))
+                    sent = 1
+                else:
+                    notes.append("force-send failed: need at least one member with email and one product")
+            else:
+                interest, user, product, score = best
+                rationale = (
+                    f"force-send: highest conversion score={score:.2f} "
+                    f"(weight={interest.weight:.1f}, timing gates ignored)"
                 )
+                notes.append(_send_for_interest(db, interest, user, product, now, rationale))
+                sent = 1
+        else:
+            interests = (
+                db.query(UserProductInterest)
+                .filter(UserProductInterest.weight >= settings.agent_min_interest_weight)
+                .order_by(UserProductInterest.weight.desc())
+                .limit(50)
+                .all()
             )
-            full_rationale = (
-                f"{rationale} | llm={draft.provider}/{draft.model} angle={draft.angle}"
-            )
+            for interest in interests:
+                reviewed += 1
+                user = db.get(User, interest.user_id)
+                product = db.get(Product, interest.product_id)
+                if not user or not product:
+                    continue
+                ok, rationale = evaluate_candidate(db, interest, user, product, now)
+                if not ok:
+                    continue
+                notes.append(_send_for_interest(db, interest, user, product, now, rationale))
+                sent += 1
 
-            deliver_marketing_email(
-                db,
-                user=user,
-                product_id=product.id,
-                product_name=product.name,
-                percent_off=percent,
-                subject=draft.subject,
-                paragraphs=draft.paragraphs,
-                rationale=full_rationale,
-                interest_weight=interest.weight,
-                interest_last_seen_at=_aware(interest.last_seen_at),
-                hours_since_interest=hours,
-                offer_id=offer.id if offer else None,
-            )
-            sent += 1
-            notes.append(
-                f"emailed product={product.sku} via {draft.provider} angle={draft.angle}"
-            )
-
+        mode = "force" if force else "scheduled"
         summary = (
-            f"Reviewed {reviewed} interest rows; sent {sent} email(s) "
+            f"[{mode}] Reviewed {reviewed} interest rows; sent {sent} email(s) "
             f"(llm_provider={settings.llm_provider}). "
             + ("; ".join(notes) if notes else "No sends this cycle.")
         )
@@ -195,7 +294,7 @@ def _loop() -> None:
     while not agent_state.stop_event.is_set():
         if agent_state.enabled and settings.agent_enabled:
             try:
-                run_agent_once()
+                run_agent_once(force=False)
             except Exception:  # noqa: BLE001
                 logger.exception("Marketing agent cycle failed")
         agent_state.stop_event.wait(settings.agent_poll_seconds)

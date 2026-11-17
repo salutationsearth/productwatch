@@ -31,7 +31,8 @@ def get_agent_status(db: Session = Depends(get_db)) -> AgentStatus:
 
 @router.post("/agent/run-once")
 def trigger_agent(db: Session = Depends(get_db)) -> dict:
-    log = run_agent_once(db)
+    """Dashboard 'Run agent now' — always send to the likeliest conversion candidate."""
+    log = run_agent_once(db, force=True)
     return {
         "candidates_reviewed": log.candidates_reviewed,
         "emails_sent": log.emails_sent,
