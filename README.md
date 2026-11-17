@@ -78,9 +78,10 @@ Or `POST /users/{id}/enroll-face` (opens webcam on the server machine).
 python -m backend.cv.webcam_aisle --user-id 1 --seconds 45
 ```
 
-1. For ~0.6s, look at the **center** of the window (auto-calibrate). Press `C` to recalibrate anytime.
-2. **Turn your head** toward a colored product box (eye glance helps; head aim is the main control).
-3. Yellow crosshair = screen gaze cursor. After ~1.5s dwell, interest weight bumps and offers refresh.
+1. Session opens **fullscreen**. Look at the **center** of the screen for ~0.7s (auto-calibrate). Press `C` to recalibrate, `F` to toggle fullscreen, `Q`/`Esc` to quit.
+2. **Glance with your eyes** at a colored product box (small head movement still helps; iris is primary).
+3. Yellow crosshair = gaze cursor. After ~1.5s dwell, interest weight bumps and offers refresh.
+4. If left/right still feels inverted: set env `PW_GAZE_X_SIGN=-1` and rerun.
 
 ### 6. Inspect interests + offers
 

@@ -17,10 +17,11 @@ LANDMARKER_URL = (
     "face_landmarker/float16/1/face_landmarker.task"
 )
 
-# MediaPipe FaceLandmarker indices (with iris refinement).
-NOSE_TIP = 1
+# MediaPipe FaceLandmarker indices (iris + eyelids).
 LEFT_EYE_OUTER, LEFT_EYE_INNER, LEFT_IRIS = 33, 133, 468
+LEFT_EYE_TOP, LEFT_EYE_BOTTOM = 159, 145
 RIGHT_EYE_INNER, RIGHT_EYE_OUTER, RIGHT_IRIS = 362, 263, 473
+RIGHT_EYE_TOP, RIGHT_EYE_BOTTOM = 386, 374
 
 
 def _ensure_landmarker_model() -> Path:
@@ -38,16 +39,17 @@ class GazeHit:
     y: float
     yaw: float
     pitch: float
+    iris_x: float
+    iris_y: float
     face_area_ratio: float
     calibrated: bool
 
 
 class GazeEstimator:
     """
-    Screen-space gaze cursor for the webcam aisle demo.
+    Screen-space gaze cursor: iris-first with light head-pose assist.
 
-    Maps head pose + iris offset onto the full frame (not onto the nose).
-    That way looking left/right/up/down moves the yellow dot across product zones.
+    Expects a mirrored (selfie) frame. Looking left should move the cursor left.
     """
 
     def __init__(self) -> None:
@@ -82,6 +84,8 @@ class GazeEstimator:
         self._pitch0 = None
         self._iris_x0 = None
         self._iris_y0 = None
+        self._smooth_x = None
+        self._smooth_y = None
         self._calib_yaw.clear()
         self._calib_pitch.clear()
         self._calib_iris_x.clear()
@@ -95,37 +99,50 @@ class GazeEstimator:
         if not result.facial_transformation_matrixes:
             return 0.0, 0.0
         mat = np.asarray(result.facial_transformation_matrixes[0], dtype=np.float64)
-        # Camera looks down -Z; face forward in model space is often -Z as well.
         r = mat[:3, :3]
-        # Extract yaw/pitch from rotation matrix (YXZ-ish).
         yaw = float(np.degrees(np.arctan2(r[0, 2], r[2, 2] + 1e-8)))
         pitch = float(np.degrees(np.arcsin(np.clip(-r[1, 2], -1.0, 1.0))))
         return yaw, pitch
 
     @staticmethod
-    def _iris_offsets(landmarks) -> tuple[float, float]:
-        """Return eye-gaze offsets in roughly [-0.5, 0.5] (right/down positive in image)."""
+    def _one_eye(
+        landmarks,
+        iris_idx: int,
+        outer_idx: int,
+        inner_idx: int,
+        top_idx: int,
+        bottom_idx: int,
+    ) -> tuple[float, float]:
+        iris = landmarks[iris_idx]
+        outer = landmarks[outer_idx]
+        inner = landmarks[inner_idx]
+        top = landmarks[top_idx]
+        bottom = landmarks[bottom_idx]
 
-        def ratio(iris_idx: int, outer_idx: int, inner_idx: int) -> tuple[float, float]:
-            iris = landmarks[iris_idx]
-            outer = landmarks[outer_idx]
-            inner = landmarks[inner_idx]
-            # Horizontal: 0 at outer, 1 at inner — center ~0.5.
-            dx = (inner.x - outer.x) or 1e-6
-            dy = (inner.y - outer.y) or 1e-6
-            # Also use vertical span from eye corners average vs iris.
-            hx = (iris.x - outer.x) / dx
-            # Approximate vertical with eyelid-independent corner midline.
-            mid_y = (outer.y + inner.y) / 2.0
-            eye_h = abs(dx) * 0.35 + 1e-6
-            hy = (iris.y - mid_y) / eye_h
-            return hx - 0.5, hy
+        # Eye-center frame: x in [-1, 1] from outer→inner, y from top→bottom.
+        eye_cx = (outer.x + inner.x) / 2.0
+        eye_cy = (top.y + bottom.y) / 2.0
+        eye_w = abs(inner.x - outer.x) + 1e-6
+        eye_h = abs(bottom.y - top.y) + 1e-6
 
+        # Positive = iris toward +image X / +image Y (right / down in the frame).
+        hx = (iris.x - eye_cx) / (eye_w * 0.5)
+        hy = (iris.y - eye_cy) / (eye_h * 0.5)
+        return float(np.clip(hx, -1.5, 1.5)), float(np.clip(hy, -1.5, 1.5))
+
+    def _iris_offsets(self, landmarks) -> tuple[float, float]:
         try:
-            lx, ly = ratio(LEFT_IRIS, LEFT_EYE_OUTER, LEFT_EYE_INNER)
-            rx, ry = ratio(RIGHT_IRIS, RIGHT_EYE_OUTER, RIGHT_EYE_INNER)
-            # Average both eyes. Image x grows right; looking right moves iris toward outer on left eye
-            # and toward inner on right eye — averaging raw hx works surprisingly well after calibration.
+            lx, ly = self._one_eye(
+                landmarks, LEFT_IRIS, LEFT_EYE_OUTER, LEFT_EYE_INNER, LEFT_EYE_TOP, LEFT_EYE_BOTTOM
+            )
+            rx, ry = self._one_eye(
+                landmarks,
+                RIGHT_IRIS,
+                RIGHT_EYE_OUTER,
+                RIGHT_EYE_INNER,
+                RIGHT_EYE_TOP,
+                RIGHT_EYE_BOTTOM,
+            )
             return (lx + rx) / 2.0, (ly + ry) / 2.0
         except (IndexError, AttributeError):
             return 0.0, 0.0
@@ -163,22 +180,23 @@ class GazeEstimator:
         iris_x0 = self._iris_x0 if self._iris_x0 is not None else iris_x
         iris_y0 = self._iris_y0 if self._iris_y0 is not None else iris_y
 
-        # Relative signals: turn head / look with eyes away from center calibration.
         dyaw = yaw - yaw0
         dpitch = pitch - pitch0
         diris_x = iris_x - iris_x0
         diris_y = iris_y - iris_y0
 
-        # Combine into normalized screen coords. Head dominates coarse aim; iris fine-tunes.
-        # Mirror X so turning your head to YOUR left aims at the left side of a mirrored preview.
-        nx = 0.5 - (
-            dyaw / max(settings.gaze_yaw_range_deg, 1.0) * settings.gaze_head_weight
-            + diris_x * settings.gaze_iris_weight
-        )
+        # Iris-first screen mapping. On a mirrored selfie frame, iris moving right in the
+        # image means looking toward the right side of the monitor → increase nx.
+        head_x = dyaw / max(settings.gaze_yaw_range_deg, 1.0)
+        head_y = dpitch / max(settings.gaze_pitch_range_deg, 1.0)
+        nx = 0.5 + (
+            diris_x * settings.gaze_iris_weight
+            + head_x * settings.gaze_head_weight
+        ) * settings.gaze_x_sign
         ny = 0.5 + (
-            dpitch / max(settings.gaze_pitch_range_deg, 1.0) * settings.gaze_head_weight
-            + diris_y * settings.gaze_iris_weight
-        )
+            diris_y * settings.gaze_iris_weight
+            + head_y * settings.gaze_head_weight
+        ) * settings.gaze_y_sign
         nx = float(np.clip(nx, 0.0, 1.0))
         ny = float(np.clip(ny, 0.0, 1.0))
 
@@ -199,6 +217,8 @@ class GazeEstimator:
             y=float(self._smooth_y),
             yaw=dyaw,
             pitch=dpitch,
+            iris_x=diris_x,
+            iris_y=diris_y,
             face_area_ratio=face_area_ratio,
             calibrated=self.is_calibrated,
         )

@@ -22,15 +22,22 @@ class Settings(BaseSettings):
     dwell_seconds: float = 1.5
     weight_bump: float = 5.0
     weight_cap: float = 100.0
-    gaze_hit_radius_px: float = 80.0
+    gaze_hit_radius_px: float = 100.0
     camera_id_default: str = "webcam-0"
-    # Screen-cursor mapping: head turn (deg) that reaches the frame edge
-    gaze_yaw_range_deg: float = 18.0
-    gaze_pitch_range_deg: float = 12.0
-    gaze_head_weight: float = 0.75
-    gaze_iris_weight: float = 1.8
-    gaze_smooth: float = 0.35  # EMA toward new sample
-    gaze_calib_frames: int = 18  # ~0.6s at 30fps looking at center
+    # Seed zones were authored for this reference frame size
+    zone_ref_width: float = 1280.0
+    zone_ref_height: float = 720.0
+    # Screen-cursor mapping — iris-first so glancing works with less head movement
+    gaze_yaw_range_deg: float = 22.0
+    gaze_pitch_range_deg: float = 14.0
+    gaze_head_weight: float = 0.2
+    gaze_iris_weight: float = 0.55  # iris offsets are ~[-1,1]; this spans most of the screen
+    gaze_smooth: float = 0.45
+    gaze_calib_frames: int = 20
+    # +1 = looking right moves cursor right on mirrored preview; set -1 if still inverted
+    gaze_x_sign: float = 1.0
+    gaze_y_sign: float = 1.0
+    aisle_fullscreen: bool = True
 
     # Discounts
     personalized_min_weight: float = 15.0
