@@ -1,12 +1,30 @@
 from __future__ import annotations
 
+import urllib.request
 from dataclasses import dataclass
+from pathlib import Path
 
 import cv2
 import mediapipe as mp
 import numpy as np
+from mediapipe.tasks import python as mp_python
+from mediapipe.tasks.python import vision
 
 from backend.app.config import settings
+
+LANDMARKER_URL = (
+    "https://storage.googleapis.com/mediapipe-models/face_landmarker/"
+    "face_landmarker/float16/1/face_landmarker.task"
+)
+
+
+def _ensure_landmarker_model() -> Path:
+    path = settings.models_dir / "face_landmarker.task"
+    if path.exists() and path.stat().st_size > 0:
+        return path
+    settings.models_dir.mkdir(parents=True, exist_ok=True)
+    urllib.request.urlretrieve(LANDMARKER_URL, path)
+    return path
 
 
 @dataclass
@@ -20,69 +38,51 @@ class GazeHit:
 
 class GazeEstimator:
     """
-    Head-pose gaze proxy using MediaPipe Face Mesh.
+    Head-pose gaze proxy using MediaPipe Tasks FaceLandmarker.
     Projects a ray from the face onto the image plane as an interest point.
     """
 
     def __init__(self) -> None:
-        self._mesh = mp.solutions.face_mesh.FaceMesh(
-            static_image_mode=False,
-            max_num_faces=1,
-            refine_landmarks=True,
-            min_detection_confidence=0.5,
+        model = _ensure_landmarker_model()
+        options = vision.FaceLandmarkerOptions(
+            base_options=mp_python.BaseOptions(model_asset_path=str(model)),
+            running_mode=vision.RunningMode.VIDEO,
+            num_faces=1,
+            min_face_detection_confidence=0.5,
+            min_face_presence_confidence=0.5,
             min_tracking_confidence=0.5,
+            output_facial_transformation_matrixes=True,
         )
-        # Approximate 3D model points for solvePnP (nose tip, chin, eyes, mouth).
-        self._model_points = np.array(
-            [
-                (0.0, 0.0, 0.0),  # nose tip
-                (0.0, -63.6, -12.5),  # chin
-                (-43.3, 32.7, -26.0),  # left eye outer
-                (43.3, 32.7, -26.0),  # right eye outer
-                (-28.9, -28.9, -24.1),  # left mouth
-                (28.9, -28.9, -24.1),  # right mouth
-            ],
-            dtype=np.float64,
-        )
-        self._landmark_ids = [1, 152, 33, 263, 61, 291]
+        self._landmarker = vision.FaceLandmarker.create_from_options(options)
+        self._frame_ts_ms = 0
 
     def close(self) -> None:
-        self._mesh.close()
+        self._landmarker.close()
 
     def estimate(self, frame_bgr: np.ndarray) -> GazeHit | None:
         h, w = frame_bgr.shape[:2]
         rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
-        result = self._mesh.process(rgb)
-        if not result.multi_face_landmarks:
+        mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
+        self._frame_ts_ms += 33
+        result = self._landmarker.detect_for_video(mp_image, self._frame_ts_ms)
+        if not result.face_landmarks:
             return None
 
-        landmarks = result.multi_face_landmarks[0].landmark
-        image_points = np.array(
-            [(landmarks[i].x * w, landmarks[i].y * h) for i in self._landmark_ids],
-            dtype=np.float64,
-        )
-        focal = w
-        cam_matrix = np.array(
-            [[focal, 0, w / 2], [0, focal, h / 2], [0, 0, 1]],
-            dtype=np.float64,
-        )
-        dist = np.zeros((4, 1))
-        ok, rvec, tvec = cv2.solvePnP(
-            self._model_points, image_points, cam_matrix, dist, flags=cv2.SOLVEPNP_ITERATIVE
-        )
-        if not ok:
-            return None
+        landmarks = result.face_landmarks[0]
+        nose = landmarks[1]
+        nose_x, nose_y = nose.x * w, nose.y * h
 
-        rot, _ = cv2.Rodrigues(rvec)
-        # Camera-space forward axis from head rotation.
-        forward = rot @ np.array([0.0, 0.0, -1.0])
-        yaw = float(np.degrees(np.arctan2(forward[0], forward[2])))
-        pitch = float(np.degrees(np.arcsin(np.clip(-forward[1], -1.0, 1.0))))
+        yaw = 0.0
+        pitch = 0.0
+        if result.facial_transformation_matrixes:
+            mat = np.asarray(result.facial_transformation_matrixes[0], dtype=np.float64)
+            # MediaPipe facial transform: rotation maps face axes into camera space.
+            forward = mat[:3, :3] @ np.array([0.0, 0.0, -1.0])
+            yaw = float(np.degrees(np.arctan2(forward[0], forward[2] + 1e-8)))
+            pitch = float(np.degrees(np.arcsin(np.clip(-forward[1], -1.0, 1.0))))
 
-        nose = image_points[0]
-        # Map yaw/pitch onto the frame as a gaze cursor (hackathon aisle sim).
-        gaze_x = float(np.clip(nose[0] + yaw * (w / 60.0), 0, w - 1))
-        gaze_y = float(np.clip(nose[1] + pitch * (h / 60.0), 0, h - 1))
+        gaze_x = float(np.clip(nose_x + yaw * (w / 60.0), 0, w - 1))
+        gaze_y = float(np.clip(nose_y + pitch * (h / 60.0), 0, h - 1))
 
         xs = [lm.x * w for lm in landmarks]
         ys = [lm.y * h for lm in landmarks]
@@ -101,7 +101,6 @@ def hit_product_zone(x: float, y: float, zones: list) -> object | None:
     """Return the zone containing (x,y), preferring the smallest area on overlap."""
     hits = [z for z in zones if point_in_zone(x, y, z)]
     if not hits:
-        # Soft hit: nearest zone center within radius.
         best = None
         best_d = settings.gaze_hit_radius_px
         for z in zones:
