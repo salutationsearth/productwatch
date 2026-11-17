@@ -9,13 +9,14 @@
     </div>
     <div class="row">
       <button class="btn btn-secondary" type="button" id="refresh-dash">Refresh</button>
+      <button class="btn btn-primary" type="button" id="run-agent">Run agent now</button>
       <form method="post" action="/auth/manager/logout">
         <button class="btn btn-secondary" type="submit">Sign out</button>
       </form>
     </div>
   </div>
 
-  <p class="agent-line" id="agent-line">Marketing agent runs externally via OpenAI + MCP. Emails appear here after the agent calls report_email_sent.</p>
+  <p class="agent-line" id="agent-line">Local mock-LLM agent · loading…</p>
 
   <div class="kpi-strip" id="kpi-strip">
     <div class="kpi"><div class="label">Rewards members</div><div class="value">{{ summary.rewards_members }}</div></div>
@@ -84,9 +85,25 @@
     </section>
   </div>
 
+  {% if summary.recent_agent_runs %}
+  <section class="card" style="margin-bottom:1.25rem;">
+    <h2>Agent runs</h2>
+    <p class="section-sub">Local mock-LLM cycles (scheduled + force).</p>
+    <ul class="agent-runs">
+      {% for r in summary.recent_agent_runs %}
+      <li>
+        <span>{{ r.created_at[:16].replace('T', ' ') if r.created_at else '—' }}</span>
+        · reviewed {{ r.candidates_reviewed }}, sent {{ r.emails_sent }}
+        — {{ r.summary }}
+      </li>
+      {% endfor %}
+    </ul>
+  </section>
+  {% endif %}
+
   <section class="card">
     <h2>Emails sent</h2>
-    <p class="section-sub">Recent marketing messages from the agent.</p>
+    <p class="section-sub">Recent marketing messages from the agent (Gmail SMTP).</p>
     <div class="table-wrap">
       <table>
         <thead>

@@ -1,22 +1,11 @@
-# WatcherMart (ProductWatch)
+# WatcherMart (ProductWatch) — local demo
 
-Hackathon supermarket demo: aisle interest detection, Rewards face enrollment, and an **external OpenAI marketing agent** connected through MCP.
+Everything runs on your machine:
 
-## Architecture
-
-```
-Browser (any device) → WatcherMart web
-  - Rewards signup + face enroll (browser webcam → server)
-  - Customer account / manager dashboard
-
-Your PC (local) → aisle CV demo
-  - webcam + gaze locally
-  - POST interest to https://productwatch.jacob-yu.com/api/aisle/*
-
-VPS server (no webcam)
-  - stores users, embeddings, interest, emails
-  - MCP at mcp.productwatch.jacob-yu.com for OpenAI agent
-```
+- WatcherMart web UI (rewards signup, account, manager desk)
+- Local webcam aisle interest demo
+- Local mock-LLM marketing agent
+- Real email send via **Gmail SMTP**
 
 ## Setup
 
@@ -26,76 +15,53 @@ python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 python backend/scripts/seed_products.py
+```
+
+Edit `.env` and set your Gmail + [App Password](https://myaccount.google.com/apppasswords):
+
+```env
+PW_EMAIL_PROVIDER=smtp
+PW_SMTP_HOST=smtp.gmail.com
+PW_SMTP_PORT=587
+PW_SMTP_USERNAME=your.email@gmail.com
+PW_SMTP_PASSWORD=xxxx xxxx xxxx xxxx
+PW_MARKETING_FROM_EMAIL=your.email@gmail.com
+```
+
+## Reset demo data
+
+Stop uvicorn first (SQLite lock), then:
+
+```powershell
+python backend/scripts/reset_db.py
+```
+
+Wipes users, faces, interest, emails, offers, agent logs, and outbox HTML, then reseeds products/zones/discounts.
+
+## Run
+
+```powershell
 uvicorn backend.app.main:app --reload --app-dir .
 ```
 
-Storefront:
-
-- http://127.0.0.1:8000/
-- Rewards: http://127.0.0.1:8000/rewards
-- Account: http://127.0.0.1:8000/account
+- Store: http://127.0.0.1:8000/
+- Rewards signup: http://127.0.0.1:8000/rewards
 - Manager: http://127.0.0.1:8000/manager/login (`manager` / `manager`)
 
-## MCP server (for your OpenAI agent)
+## Demo flow
 
-### Production (VPS)
-
-- Web: `https://productwatch.jacob-yu.com`
-- MCP: `https://mcp.productwatch.jacob-yu.com/mcp`
-
-Deploy steps: [deploy/DEPLOY.md](deploy/DEPLOY.md)
-
-Point the OpenAI agent at:
-
-```text
-https://mcp.productwatch.jacob-yu.com/mcp
-```
-
-If `PW_MCP_AUTH_TOKEN` is set, send header `Authorization: Bearer <token>`.
-
-### Local streamable-http (smoke test)
+1. Sign up + face scan at `/rewards`
+2. Aisle interest (local webcam → local DB):
 
 ```powershell
-$env:PW_MCP_TRANSPORT="streamable-http"
-$env:PW_MCP_HOST="127.0.0.1"
-$env:PW_MCP_PORT="8001"
-python -m backend.mcp.server
-# curl http://127.0.0.1:8001/health
+python -m backend.cv.webcam_aisle --user-id 1
 ```
 
-### Local stdio
+3. Manager desk → **Run agent now**  
+   Agent drafts with the local mock LLM and sends through Gmail SMTP.  
+   Terminal prints `===== EMAIL SENT =====` on each send.
 
-```powershell
-$env:PW_MCP_TRANSPORT="stdio"
-python -m backend.mcp.server
-```
+## Notes
 
-System prompt: [AGENT_SYSTEM_PROMPT.md](AGENT_SYSTEM_PROMPT.md).
-
-### Tool flow
-
-1. `list_customer_interests` → decide who to email  
-2. `create_discount_link` → get `claim_url` / `token`  
-3. Send the email with your own email channel  
-4. `report_email_sent` → appears on the manager dashboard  
-
-## Aisle interest demo (runs on YOUR PC, talks to the server)
-
-1. Sign up + face enroll on the website (`/rewards`).
-2. On your computer (venv active, same API key as server `PW_AISLE_API_KEY`):
-
-```powershell
-python -m backend.cv.webcam_aisle `
-  --server https://productwatch.jacob-yu.com `
-  --api-key change-me-aisle-client-key `
-  --user-id <id>
-```
-
-Omit `--user-id` to face-match against enrollments downloaded from the server.  
-Interest events are POSTed to the VPS — the server never opens a webcam.
-
-## Config
-
-Edit `.env` (see `.env.example`). Important:
-
-- `PW_PUBLIC_BASE_URL` — must match the URL customers use so discount links work
+- Tracking links in emails use `PW_PUBLIC_BASE_URL` (`http://127.0.0.1:8000` by default).
+- Outbox HTML copies are still written under `backend/data/outbox/` even when SMTP succeeds.

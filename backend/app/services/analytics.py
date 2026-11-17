@@ -6,6 +6,7 @@ from sqlalchemy import and_, case, func, or_
 from sqlalchemy.orm import Session
 
 from backend.app.models import (
+    AgentRunLog,
     InterestEvent,
     MarketingEmail,
     Product,
@@ -124,8 +125,21 @@ def dashboard_summary(db: Session) -> DashboardSummary:
         )
     email_funnel.sort(key=lambda r: r.emails_sent, reverse=True)
 
-    # Agent runs externally via MCP/OpenAI — no local agent cycle logs.
-    recent_agent_runs: list[dict] = []
+    recent = (
+        db.query(AgentRunLog)
+        .order_by(AgentRunLog.created_at.desc())
+        .limit(8)
+        .all()
+    )
+    recent_agent_runs = [
+        {
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+            "candidates_reviewed": r.candidates_reviewed,
+            "emails_sent": r.emails_sent,
+            "summary": r.summary,
+        }
+        for r in recent
+    ]
 
     return DashboardSummary(
         rewards_members=rewards_members,

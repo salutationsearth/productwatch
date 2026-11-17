@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     models_dir: Path = BACKEND_ROOT / "models"
     data_dir: Path = BACKEND_ROOT / "data"
     outbox_dir: Path = BACKEND_ROOT / "data" / "outbox"
-    public_base_url: str = "https://productwatch.jacob-yu.com"
+    public_base_url: str = "http://127.0.0.1:8000"
 
     # MCP HTTP hosting (OpenAI remote agent)
     mcp_transport: str = "stdio"  # stdio | streamable-http | sse
@@ -76,8 +76,8 @@ class Settings(BaseSettings):
     llm_provider: str = "mock"
     openai_api_key: str | None = None
     openai_model: str = "gpt-4o-mini"
-    # Email delivery: outbox (default) | resend | smtp
-    email_provider: str = "outbox"
+    # Email delivery: smtp (Gmail) | outbox | resend
+    email_provider: str = "smtp"
     resend_api_key: str | None = None
     smtp_host: str | None = None
     smtp_port: int = 587
