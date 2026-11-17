@@ -8,15 +8,12 @@ from starlette.middleware.sessions import SessionMiddleware
 from backend.app.api import analytics, auth, cameras, health, pages, products, sessions, tracking, users
 from backend.app.config import settings
 from backend.app.db import init_db
-from backend.app.services.marketing_agent import start_marketing_agent, stop_marketing_agent
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     init_db()
-    start_marketing_agent()
     yield
-    stop_marketing_agent()
 
 
 app = FastAPI(title="WatcherMart", lifespan=lifespan)

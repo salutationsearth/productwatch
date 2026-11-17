@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-from sqlalchemy import case, func
+from sqlalchemy import and_, case, func, or_
 from sqlalchemy.orm import Session
 
 from backend.app.models import (
-    AgentRunLog,
     InterestEvent,
     MarketingEmail,
     Product,
@@ -21,10 +20,26 @@ def dashboard_summary(db: Session) -> DashboardSummary:
     face_enrolled = db.query(User).filter(User.face_enrolled.is_(True)).count()
     products_tracked = db.query(Product).count()
     interest_events_total = db.query(InterestEvent).count()
-    emails_sent_total = db.query(MarketingEmail).count()
-    opens = db.query(MarketingEmail).filter(MarketingEmail.opened_at.isnot(None)).count()
-    clicks = db.query(MarketingEmail).filter(MarketingEmail.clicked_at.isnot(None)).count()
-    conversions = db.query(MarketingEmail).filter(MarketingEmail.converted_at.isnot(None)).count()
+    sent_filter = or_(
+        MarketingEmail.status.like("sent%"),
+        MarketingEmail.status == "converted",
+    )
+    emails_sent_total = db.query(MarketingEmail).filter(sent_filter).count()
+    opens = (
+        db.query(MarketingEmail)
+        .filter(sent_filter, MarketingEmail.opened_at.isnot(None))
+        .count()
+    )
+    clicks = (
+        db.query(MarketingEmail)
+        .filter(sent_filter, MarketingEmail.clicked_at.isnot(None))
+        .count()
+    )
+    conversions = (
+        db.query(MarketingEmail)
+        .filter(sent_filter, MarketingEmail.converted_at.isnot(None))
+        .count()
+    )
 
     def rate(num: int, den: int) -> float:
         return round((num / den) * 100.0, 1) if den else 0.0
@@ -75,7 +90,16 @@ def dashboard_summary(db: Session) -> DashboardSummary:
             func.sum(case((MarketingEmail.clicked_at.isnot(None), 1), else_=0)),
             func.sum(case((MarketingEmail.converted_at.isnot(None), 1), else_=0)),
         )
-        .outerjoin(MarketingEmail, MarketingEmail.product_id == Product.id)
+        .outerjoin(
+            MarketingEmail,
+            and_(
+                MarketingEmail.product_id == Product.id,
+                or_(
+                    MarketingEmail.status.like("sent%"),
+                    MarketingEmail.status == "converted",
+                ),
+            ),
+        )
         .group_by(Product.id)
         .all()
     )
@@ -100,21 +124,8 @@ def dashboard_summary(db: Session) -> DashboardSummary:
         )
     email_funnel.sort(key=lambda r: r.emails_sent, reverse=True)
 
-    recent = (
-        db.query(AgentRunLog)
-        .order_by(AgentRunLog.created_at.desc())
-        .limit(8)
-        .all()
-    )
-    recent_agent_runs = [
-        {
-            "created_at": r.created_at.isoformat() if r.created_at else None,
-            "candidates_reviewed": r.candidates_reviewed,
-            "emails_sent": r.emails_sent,
-            "summary": r.summary,
-        }
-        for r in recent
-    ]
+    # Agent runs externally via MCP/OpenAI — no local agent cycle logs.
+    recent_agent_runs: list[dict] = []
 
     return DashboardSummary(
         rewards_members=rewards_members,

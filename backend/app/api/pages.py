@@ -3,6 +3,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from backend.app.api.auth import get_customer_id, is_manager
@@ -89,6 +90,12 @@ def manager_dashboard(request: Request, db: Session = Depends(get_db)):
         db.query(MarketingEmail, Product, User)
         .join(Product, Product.id == MarketingEmail.product_id)
         .join(User, User.id == MarketingEmail.user_id)
+        .filter(
+            or_(
+                MarketingEmail.status.like("sent%"),
+                MarketingEmail.status == "converted",
+            )
+        )
         .order_by(MarketingEmail.sent_at.desc())
         .limit(50)
         .all()
