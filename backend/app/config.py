@@ -27,12 +27,15 @@ class Settings(BaseSettings):
     # Seed zones were authored for this reference frame size
     zone_ref_width: float = 1280.0
     zone_ref_height: float = 720.0
-    # Screen-cursor mapping — iris-first so glancing works with less head movement
-    gaze_yaw_range_deg: float = 22.0
-    gaze_pitch_range_deg: float = 14.0
-    gaze_head_weight: float = 0.2
-    gaze_iris_weight: float = 0.55  # iris offsets are ~[-1,1]; this spans most of the screen
-    gaze_smooth: float = 0.45
+    # Screen-cursor mapping — head-primary; iris is a light assist near center
+    gaze_yaw_range_deg: float = 16.0  # smaller = easier to reach screen edges with head
+    gaze_pitch_range_deg: float = 12.0
+    gaze_head_weight: float = 1.0
+    gaze_iris_weight: float = 0.18
+    # Fade iris assist as the head turns (iris deltas go wild under head rotation)
+    gaze_iris_fade_yaw_deg: float = 6.0
+    gaze_iris_fade_pitch_deg: float = 5.0
+    gaze_smooth: float = 0.4
     gaze_calib_frames: int = 20
     # +1 = looking right moves cursor right on mirrored preview; set -1 if still inverted
     gaze_x_sign: float = 1.0

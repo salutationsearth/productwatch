@@ -186,7 +186,7 @@ def run_aisle_session(
                 hint = "Calibrating: look at the CENTER of the screen..."
                 color = (0, 200, 255)
             else:
-                hint = "Glance with your EYES at a product box.  C=recalibrate  F=fullscreen  Q=quit"
+                hint = "Aim with your HEAD (eyes fine-tune near center).  C=recalibrate  F=fullscreen  Q=quit"
                 color = (200, 200, 200)
             cv2.putText(frame, hint, (24, 74), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
             if hit is not None and hit.calibrated:

@@ -47,9 +47,9 @@ class GazeHit:
 
 class GazeEstimator:
     """
-    Screen-space gaze cursor: iris-first with light head-pose assist.
+    Screen-space gaze cursor: head-primary with light iris assist near center.
 
-    Expects a mirrored (selfie) frame. Looking left should move the cursor left.
+    Expects a mirrored (selfie) frame. Looking/turning left should move the cursor left.
     """
 
     def __init__(self) -> None:
@@ -185,17 +185,28 @@ class GazeEstimator:
         diris_x = iris_x - iris_x0
         diris_y = iris_y - iris_y0
 
-        # Iris-first screen mapping. On a mirrored selfie frame, iris moving right in the
-        # image means looking toward the right side of the monitor → increase nx.
+        # Head carries you across the shelf; iris only fine-tunes when mostly facing center.
+        # (Large head turns distort iris-in-eye ratios and previously flung the cursor.)
         head_x = dyaw / max(settings.gaze_yaw_range_deg, 1.0)
         head_y = dpitch / max(settings.gaze_pitch_range_deg, 1.0)
+        iris_fade = float(
+            np.clip(
+                1.0
+                - max(
+                    abs(dyaw) / max(settings.gaze_iris_fade_yaw_deg, 1e-3),
+                    abs(dpitch) / max(settings.gaze_iris_fade_pitch_deg, 1e-3),
+                ),
+                0.0,
+                1.0,
+            )
+        )
         nx = 0.5 + (
-            diris_x * settings.gaze_iris_weight
-            + head_x * settings.gaze_head_weight
+            head_x * settings.gaze_head_weight
+            + diris_x * settings.gaze_iris_weight * iris_fade
         ) * settings.gaze_x_sign
         ny = 0.5 + (
-            diris_y * settings.gaze_iris_weight
-            + head_y * settings.gaze_head_weight
+            head_y * settings.gaze_head_weight
+            + diris_y * settings.gaze_iris_weight * iris_fade
         ) * settings.gaze_y_sign
         nx = float(np.clip(nx, 0.0, 1.0))
         ny = float(np.clip(ny, 0.0, 1.0))

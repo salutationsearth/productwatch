@@ -79,7 +79,7 @@ python -m backend.cv.webcam_aisle --user-id 1 --seconds 45
 ```
 
 1. Session opens **fullscreen**. Look at the **center** of the screen for ~0.7s (auto-calibrate). Press `C` to recalibrate, `F` to toggle fullscreen, `Q`/`Esc` to quit.
-2. **Glance with your eyes** at a colored product box (small head movement still helps; iris is primary).
+2. **Aim with your head** toward a product box; eyes only fine-tune near center (iris fades while you turn).
 3. Yellow crosshair = gaze cursor. After ~1.5s dwell, interest weight bumps and offers refresh.
 4. If left/right still feels inverted: set env `PW_GAZE_X_SIGN=-1` and rerun.
 
