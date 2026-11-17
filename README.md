@@ -40,29 +40,39 @@ Storefront:
 
 ## MCP server (for your OpenAI agent)
 
-From the repo root (venv active):
+### Production (VPS)
+
+- Web: `https://productwatch.jacob-yu.com`
+- MCP: `https://mcp.productwatch.jacob-yu.com/mcp`
+
+Deploy steps: [deploy/DEPLOY.md](deploy/DEPLOY.md)
+
+Point the OpenAI agent at:
+
+```text
+https://mcp.productwatch.jacob-yu.com/mcp
+```
+
+If `PW_MCP_AUTH_TOKEN` is set, send header `Authorization: Bearer <token>`.
+
+### Local streamable-http (smoke test)
 
 ```powershell
+$env:PW_MCP_TRANSPORT="streamable-http"
+$env:PW_MCP_HOST="127.0.0.1"
+$env:PW_MCP_PORT="8001"
+python -m backend.mcp.server
+# curl http://127.0.0.1:8001/health
+```
+
+### Local stdio
+
+```powershell
+$env:PW_MCP_TRANSPORT="stdio"
 python -m backend.mcp.server
 ```
 
-Point your OpenAI agent / MCP client at that stdio command. Working directory must be the repo root so imports and the SQLite DB resolve correctly.
-
-Example MCP config snippet:
-
-```json
-{
-  "mcpServers": {
-    "watchermart-marketing": {
-      "command": "C:\\Users\\marsj\\OneDrive\\Documents\\Misc\\cursor test\\ProductWatch\\.venv\\Scripts\\python.exe",
-      "args": ["-m", "backend.mcp.server"],
-      "cwd": "C:\\Users\\marsj\\OneDrive\\Documents\\Misc\\cursor test\\ProductWatch"
-    }
-  }
-}
-```
-
-System prompt for the agent: see [AGENT_SYSTEM_PROMPT.md](AGENT_SYSTEM_PROMPT.md).
+System prompt: [AGENT_SYSTEM_PROMPT.md](AGENT_SYSTEM_PROMPT.md).
 
 ### Tool flow
 

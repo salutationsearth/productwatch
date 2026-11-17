@@ -1,14 +1,12 @@
 """
-WatcherMart Marketing MCP server (stdio).
+WatcherMart Marketing MCP server.
 
-Exposes tools so an OpenAI agent can:
-  - read customer aisle-interest data
-  - create tracked discount links
-  - report emails it sent (manager dashboard)
-  - check conversion on those links
+Transports:
+  stdio            — local clients
+  streamable-http  — public VPS (OpenAI remote MCP)
 
-Run from repo root:
-  python -m backend.mcp.server
+Production:
+  https://mcp.productwatch.jacob-yu.com/mcp
 """
 
 from __future__ import annotations
@@ -17,13 +15,19 @@ import json
 import sys
 from pathlib import Path
 
-# Allow `python -m backend.mcp.server` from repo root.
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+import uvicorn
 from mcp.server.mcpserver import MCPServer
+from mcp.server.transport_security import TransportSecuritySettings
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
+from starlette.responses import JSONResponse
+from starlette.routing import Route
 
+from backend.app.config import settings
 from backend.app.db import SessionLocal, init_db
 from backend.app.services import marketing_ops
 
@@ -137,8 +141,79 @@ def get_link_conversion(token: str) -> str:
         db.close()
 
 
+class BearerAuthMiddleware(BaseHTTPMiddleware):
+    def __init__(self, app, token: str):
+        super().__init__(app)
+        self.token = token
+
+    async def dispatch(self, request: Request, call_next):
+        if request.url.path in {"/health", "/healthz"}:
+            return await call_next(request)
+        auth = request.headers.get("authorization", "")
+        if auth != f"Bearer {self.token}":
+            return JSONResponse({"error": "unauthorized"}, status_code=401)
+        return await call_next(request)
+
+
+def _transport_security() -> TransportSecuritySettings:
+    hosts = [h.strip() for h in settings.mcp_allowed_hosts.split(",") if h.strip()]
+    origins = [o.strip() for o in settings.mcp_allowed_origins.split(",") if o.strip()]
+    return TransportSecuritySettings(
+        enable_dns_rebinding_protection=True,
+        allowed_hosts=hosts,
+        allowed_origins=origins,
+    )
+
+
+async def _health(_request: Request):
+    return JSONResponse(
+        {
+            "status": "ok",
+            "service": "watchermart-mcp",
+            "endpoint": settings.mcp_path,
+        }
+    )
+
+
+def run_http() -> None:
+    """Serve streamable HTTP MCP behind nginx at mcp.productwatch.jacob-yu.com."""
+    # Build app with explicit path + DNS rebinding allowlist for the public host.
+    app = mcp.streamable_http_app(
+        streamable_http_path=settings.mcp_path,
+        transport_security=_transport_security(),
+        stateless_http=settings.mcp_stateless_http,
+    )
+    app.router.routes.insert(0, Route("/health", _health))
+    if settings.mcp_auth_token:
+        app.add_middleware(BearerAuthMiddleware, token=settings.mcp_auth_token)
+        print("MCP bearer auth: enabled", flush=True)
+    else:
+        print("MCP bearer auth: DISABLED (set PW_MCP_AUTH_TOKEN for production)", flush=True)
+
+    print(
+        f"MCP listening on http://{settings.mcp_host}:{settings.mcp_port}{settings.mcp_path}",
+        flush=True,
+    )
+    uvicorn.run(app, host=settings.mcp_host, port=settings.mcp_port, log_level="info")
+
+
 def main() -> None:
     init_db()
+    transport = (settings.mcp_transport or "stdio").lower().strip()
+
+    if transport in {"streamable-http", "http"}:
+        run_http()
+        return
+
+    if transport == "sse":
+        mcp.run(
+            transport="sse",
+            host=settings.mcp_host,
+            port=settings.mcp_port,
+            transport_security=_transport_security(),
+        )
+        return
+
     mcp.run(transport="stdio")
 
 

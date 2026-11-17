@@ -19,7 +19,21 @@ class Settings(BaseSettings):
     models_dir: Path = BACKEND_ROOT / "models"
     data_dir: Path = BACKEND_ROOT / "data"
     outbox_dir: Path = BACKEND_ROOT / "data" / "outbox"
-    public_base_url: str = "http://127.0.0.1:8000"
+    public_base_url: str = "https://productwatch.jacob-yu.com"
+
+    # MCP HTTP hosting (OpenAI remote agent)
+    mcp_transport: str = "stdio"  # stdio | streamable-http | sse
+    mcp_host: str = "127.0.0.1"
+    mcp_port: int = 8001
+    mcp_path: str = "/mcp"
+    mcp_stateless_http: bool = True
+    mcp_auth_token: str | None = None
+    mcp_allowed_hosts: str = "mcp.productwatch.jacob-yu.com,localhost,127.0.0.1"
+    mcp_allowed_origins: str = (
+        "https://mcp.productwatch.jacob-yu.com,https://productwatch.jacob-yu.com,"
+        "http://localhost,http://127.0.0.1"
+    )
+    mcp_public_url: str = "https://mcp.productwatch.jacob-yu.com/mcp"
 
     # Face matching
     face_match_threshold: float = 0.35  # cosine distance; lower = stricter
