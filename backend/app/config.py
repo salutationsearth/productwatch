@@ -22,8 +22,15 @@ class Settings(BaseSettings):
     dwell_seconds: float = 1.5
     weight_bump: float = 5.0
     weight_cap: float = 100.0
-    gaze_hit_radius_px: float = 40.0
+    gaze_hit_radius_px: float = 80.0
     camera_id_default: str = "webcam-0"
+    # Screen-cursor mapping: head turn (deg) that reaches the frame edge
+    gaze_yaw_range_deg: float = 18.0
+    gaze_pitch_range_deg: float = 12.0
+    gaze_head_weight: float = 0.75
+    gaze_iris_weight: float = 1.8
+    gaze_smooth: float = 0.35  # EMA toward new sample
+    gaze_calib_frames: int = 18  # ~0.6s at 30fps looking at center
 
     # Discounts
     personalized_min_weight: float = 15.0

@@ -78,7 +78,9 @@ Or `POST /users/{id}/enroll-face` (opens webcam on the server machine).
 python -m backend.cv.webcam_aisle --user-id 1 --seconds 45
 ```
 
-Look at the colored product zones. Yellow dot = gaze cursor. After ~1.5s dwell, interest weight bumps and offers refresh.
+1. For ~0.6s, look at the **center** of the window (auto-calibrate). Press `C` to recalibrate anytime.
+2. **Turn your head** toward a colored product box (eye glance helps; head aim is the main control).
+3. Yellow crosshair = screen gaze cursor. After ~1.5s dwell, interest weight bumps and offers refresh.
 
 ### 6. Inspect interests + offers
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from dataclasses import dataclass
 
 import cv2
 from sqlalchemy.orm import Session
@@ -16,7 +17,34 @@ from backend.app.services.gaze import GazeEstimator, hit_product_zone
 from backend.app.services.interest import bump_interest, list_interests
 
 
-def _draw_zones(frame, zones: list[ProductZone], product_names: dict[int, str], active_pid: int | None):
+@dataclass
+class _ZoneView:
+    product_id: int
+    x1: float
+    y1: float
+    x2: float
+    y2: float
+    label: str | None
+
+
+def _mirror_zones(zones: list[ProductZone], frame_w: int) -> list[_ZoneView]:
+    """Flip zone X so they line up with a mirrored webcam preview."""
+    out: list[_ZoneView] = []
+    for z in zones:
+        out.append(
+            _ZoneView(
+                product_id=z.product_id,
+                x1=frame_w - 1 - z.x2,
+                y1=z.y1,
+                x2=frame_w - 1 - z.x1,
+                y2=z.y2,
+                label=z.label,
+            )
+        )
+    return out
+
+
+def _draw_zones(frame, zones: list[_ZoneView], product_names: dict[int, str], active_pid: int | None):
     for z in zones:
         color = (40, 200, 80) if z.product_id == active_pid else (80, 80, 200)
         cv2.rectangle(frame, (int(z.x1), int(z.y1)), (int(z.x2), int(z.y2)), color, 2)
@@ -71,7 +99,12 @@ def run_aisle_session(
             if not ok:
                 continue
 
-            # Periodic identity match unless forced.
+            # Mirror so left/right matches a normal selfie / monitor feel.
+            frame = cv2.flip(frame, 1)
+            h, w = frame.shape[:2]
+            view_zones = _mirror_zones(zones, w)
+
+            # Periodic identity match unless forced (on mirrored frame is fine).
             if matched_user is None and time.time() - last_identify > 1.0:
                 emb = face_service.embed_largest(frame)
                 if emb is not None:
@@ -83,8 +116,17 @@ def run_aisle_session(
             hit = gaze_est.estimate(frame)
             active_pid = None
             if hit is not None:
-                zone = hit_product_zone(hit.x, hit.y, zones)
-                cv2.circle(frame, (int(hit.x), int(hit.y)), 8, (0, 255, 255), -1)
+                zone = hit_product_zone(hit.x, hit.y, view_zones)
+                # Crosshair is easier to aim than a small filled dot.
+                cv2.drawMarker(
+                    frame,
+                    (int(hit.x), int(hit.y)),
+                    (0, 255, 255),
+                    markerType=cv2.MARKER_CROSS,
+                    markerSize=24,
+                    thickness=2,
+                )
+                cv2.circle(frame, (int(hit.x), int(hit.y)), 6, (0, 255, 255), -1)
                 if zone is not None:
                     active_pid = zone.product_id
                     if current_zone_pid != active_pid:
@@ -105,27 +147,38 @@ def run_aisle_session(
                                 proximity=hit.face_area_ratio,
                             )
                             events += 1
-                            # Reset dwell clock so continuous stare keeps accruing slowly.
                             dwell_start[active_pid] = time.time()
                 else:
                     current_zone_pid = None
                     dwell_start.clear()
 
-            _draw_zones(frame, zones, products, active_pid)
+            _draw_zones(frame, view_zones, products, active_pid)
             status = f"user={matched_user or 'unknown'} events={events}"
             cv2.putText(frame, status, (16, 32), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-            cv2.putText(
-                frame,
-                "Look at product zones. Press Q to finish.",
-                (16, 60),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.55,
-                (200, 200, 200),
-                1,
-            )
+            if hit is None or not hit.calibrated:
+                hint = "Calibrating: look at the CENTER of the window..."
+                color = (0, 200, 255)
+            else:
+                hint = "Turn your HEAD toward a product box (eyes help too). C=recalibrate  Q=quit"
+                color = (200, 200, 200)
+            cv2.putText(frame, hint, (16, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.55, color, 1)
+            if hit is not None and hit.calibrated:
+                cv2.putText(
+                    frame,
+                    f"yaw={hit.yaw:+.1f} pitch={hit.pitch:+.1f}",
+                    (16, 88),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.5,
+                    (180, 180, 180),
+                    1,
+                )
+
             cv2.imshow("ProductWatch — Aisle Interest", frame)
-            if cv2.waitKey(1) & 0xFF == ord("q"):
+            key = cv2.waitKey(1) & 0xFF
+            if key == ord("q"):
                 break
+            if key == ord("c"):
+                gaze_est.reset_calibration()
     finally:
         gaze_est.close()
         cap.release()
