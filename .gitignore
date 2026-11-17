@@ -24,12 +24,13 @@ Thumbs.db
 *.db
 *.sqlite
 *.sqlite3
-backend/data/
-backend/models/
+backend/data/*
+!backend/data/.gitkeep
+backend/models/*
+!backend/models/.gitkeep
 *.onnx
 insightface/
 .insightface/
-~/.insightface/
 
 # Webcam dumps / debug frames
 *.avi
