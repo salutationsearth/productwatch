@@ -1,0 +1,1 @@
+"""ProductWatch backend application package."""
